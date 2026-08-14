@@ -82,6 +82,14 @@
 - 当前受限环境中新增依赖需要网络时，应直接请求以受审批方式运行限定到目标 package 的
   `cargo add -p <package>`，不得因网络不可用而改为手动编辑 manifest。
 
+### 6.1 版本与发布
+
+- 使用 `.changes/config.toml` 中的 Semifold 配置管理 changeset、版本和发布通道。
+- 当前配置要求 Semifold 0.3.0 或与其配置格式兼容的后续版本；执行前必须确认没有因 PATH
+  优先级误用不支持 Cargo workspace 继承字段的 0.2.5。
+- 第一阶段四个 crate 均处于 `alpha` 发布通道。
+- 未经用户明确授权，不得执行实际版本提升、registry publish、GitHub Release 或发布 CI。
+
 ## 7. 安全、Secret 与日志
 
 - Secret 值不得进入可序列化配置、`Debug`、错误 Display、tracing、测试 fixture 或快照。

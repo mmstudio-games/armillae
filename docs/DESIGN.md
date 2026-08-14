@@ -267,6 +267,22 @@ Workspace 初始化阶段只添加上述 crate 之间的本地 path 依赖。外
 需要时通过 Cargo CLI 引入，避免空 crate 提前携带未使用依赖；这不改变本节记录的第一阶段
 预期依赖与版本约束。
 
+### 5.3 版本与发布
+
+Workspace 使用 Semifold 管理 changeset、crate 版本和发布流程，配置保存在
+`.changes/config.toml`。初始化工具基线为 Semifold 0.3.0；0.2.5 不能解析本 workspace 使用的
+Cargo `version.workspace = true`，不得用于维护当前配置。
+
+第一阶段的发布约定为：
+
+- 使用 Rust workspace resolver 发现四个 crate；
+- base branch 与 release branch 均为 `main`；
+- 四个 crate 均使用 `alpha` 发布通道，首次进入通道时保留当前稳定版本基准，不额外执行
+  patch、minor 或 major 提升；
+- 使用 Semifold 默认 changelog 标签；
+- 初始化阶段不生成 GitHub Actions，CI 发布流程在得到单独设计和授权后再增加；
+- 配置发布通道不等于授权执行版本提升或向 registry 发布。
+
 ## 6. `armillae-core`：共享协议
 
 公共协议类型默认派生 `Clone`、`Debug`、`Serialize` 和 `Deserialize`。预期继续增加变体的公共枚举应标记 `#[non_exhaustive]`，避免新增 Provider 能力时迫使下游进行同步升级。配置通过显式 `api_version` 管理文件格式演进。

@@ -1,0 +1,72 @@
+[branches]
+base = "main"
+release = "main"
+
+[tags]
+chore = "Chores"
+feat = "New Features"
+fix = "Bug Fixes"
+perf = "Performance Improvements"
+refactor = "Refactors"
+
+[changelog]
+template = """
+## v{{ package.next_version }}
+
+{% for section in sections %}### {{ section.name }}
+
+{% for entry in section.entries %}{{ entry.content }}{% if not loop.last %}
+{% endif %}{% endfor %}{% if not loop.last or dependency_updates %}
+
+{% endif %}{% endfor %}{% if dependency_updates %}### Dependencies
+
+{% for dependency in dependency_updates %}- Update {{ dependency.package }} to {{ dependency.next_version }}.{% if not loop.last %}
+{% endif %}{% endfor %}{% endif %}"""
+changeset-template = """
+- {% if changeset.commit and changeset.commit.web_url %}[`{{ changeset.commit.short_sha }}`]({{ changeset.commit.web_url }}): {% endif %}{{ changeset.summary_paragraphs[0] | join(" ") }}{% if changeset.pull_request %} {% if changeset.pull_request.web_url %}([#{{ changeset.pull_request.number }}]({{ changeset.pull_request.web_url }}){% else %}(#{{ changeset.pull_request.number }}{% endif %}{% if changeset.pull_request.author %} by @{{ changeset.pull_request.author }}{% endif %}){% endif %}{% for paragraph in changeset.summary_paragraphs %}{% if not loop.first %}
+
+    {{ paragraph | join(" ") }}{% endif %}{% endfor %}{% if changeset.summary_paragraphs | length > 1 %}
+{% endif %}"""
+
+[packages.armillae-core]
+path = "crates/armillae-core"
+resolver = "rust"
+channel = "alpha"
+channel-bump = "preserve"
+
+[packages.armillae-llm]
+path = "crates/armillae-llm"
+resolver = "rust"
+channel = "alpha"
+channel-bump = "preserve"
+
+[packages.armillae-llm-rig]
+path = "crates/armillae-llm-rig"
+resolver = "rust"
+channel = "alpha"
+channel-bump = "preserve"
+
+[packages.armillae-tools]
+path = "crates/armillae-tools"
+resolver = "rust"
+channel = "alpha"
+channel-bump = "preserve"
+
+[resolver.rust.pre-check]
+type = "http"
+url = "https://crates.io/api/v1/crates/{{ package.name }}/{{ package.version }}"
+retry = [
+    2,
+    5,
+    15,
+    30,
+]
+
+[[resolver.rust.publish]]
+command = "cargo"
+args = ["publish"]
+
+[[resolver.rust.post-version]]
+command = "cargo"
+args = ["generate-lockfile"]
+dry-run = true

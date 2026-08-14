@@ -48,6 +48,8 @@ API 冻结前验证 rig 低层能力，`P1` 至 `P6` 逐步完成协议、执行
 - [x] 落实 crate 依赖方向，禁止 `armillae-llm` 与 `armillae-tools` 互相依赖。
 - [x] 保证 `armillae-core` 不依赖异步运行时、HTTP Client 或 LLM SDK。
 - [x] 建立统一的格式检查、Clippy、单元测试和文档构建基线。
+- [x] 使用 Semifold 0.3.0 初始化 Rust workspace 版本管理，并将四个 crate 配置为 `alpha`
+      发布通道。
 
 ### Message 与 Tool 协议
 
