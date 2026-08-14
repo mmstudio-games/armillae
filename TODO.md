@@ -10,10 +10,11 @@ API 冻结前验证 rig 低层能力，`P1` 至 `P6` 逐步完成协议、执行
 
 - [ ] 保持 Bridge 一次只执行一个 Model Call，不自动执行 Tool 或驱动 Tool Continuation Loop。
 - [ ] 保持 Tool Executor 一次只执行一个 ToolCall，不调用 Bridge。
-- [ ] 保持 `armillae-core`、`armillae-bridge`、`armillae-tools` 和
-      `armillae-bridge-rig` 的设计依赖方向。
-- [ ] 确保除 `armillae-bridge-rig` 外没有 crate 依赖或暴露 rig 类型。
-- [ ] 不在第一阶段引入 Turn Runner、完整 Agent、Memory、RAG、工作流编排或世界状态。
+- [ ] 保持 `armillae-core`、`armillae-llm`、`armillae-tools` 和
+      `armillae-llm-rig` 的设计依赖方向。
+- [ ] 确保除 `armillae-llm-rig` 外没有 crate 依赖或暴露 rig 类型。
+- [ ] 不在第一阶段引入 Turn Runner、完整 Agent、Memory、Embedding、Vector Store、RAG、
+      工作流编排或世界状态。
 
 ## P0：rig 低层可行性 Spike
 
@@ -41,12 +42,12 @@ API 冻结前验证 rig 低层能力，`P1` 至 `P6` 逐步完成协议、执行
 
 ### Workspace 基础
 
-- [ ] 初始化 Rust workspace。
-- [ ] 创建 `armillae-core`、`armillae-bridge`、`armillae-tools` 和
-      `armillae-bridge-rig` 四个 crate。
-- [ ] 落实 crate 依赖方向，禁止 `armillae-bridge` 与 `armillae-tools` 互相依赖。
-- [ ] 保证 `armillae-core` 不依赖异步运行时、HTTP Client 或 LLM SDK。
-- [ ] 建立统一的格式检查、Clippy、单元测试和文档构建基线。
+- [x] 初始化 Rust workspace。
+- [x] 创建 `armillae-core`、`armillae-llm`、`armillae-tools` 和
+      `armillae-llm-rig` 四个 crate。
+- [x] 落实 crate 依赖方向，禁止 `armillae-llm` 与 `armillae-tools` 互相依赖。
+- [x] 保证 `armillae-core` 不依赖异步运行时、HTTP Client 或 LLM SDK。
+- [x] 建立统一的格式检查、Clippy、单元测试和文档构建基线。
 
 ### Message 与 Tool 协议
 
@@ -110,7 +111,7 @@ API 冻结前验证 rig 低层能力，`P1` 至 `P6` 逐步完成协议、执行
 - [ ] 覆盖重复注册、稳定定义排序和注销行为。
 - [ ] 覆盖 `ToolContext` extensions 透传和 ToolCall ID 保持。
 
-## P3：`armillae-bridge` 与 Mock
+## P3：`armillae-llm` 与 Mock
 
 ### Bridge 接口与能力
 
@@ -149,7 +150,7 @@ API 冻结前验证 rig 低层能力，`P1` 至 `P6` 逐步完成协议、执行
 - [ ] 记录收到的请求，供下游测试断言。
 - [ ] 建立可由 Mock 和真实 Adapter 复用的 Bridge 合约测试框架。
 
-## P4：`armillae-bridge-rig` 非流式 Adapter
+## P4：`armillae-llm-rig` 非流式 Adapter
 
 ### 隔离与转换
 
@@ -262,7 +263,7 @@ API 冻结前验证 rig 低层能力，`P1` 至 `P6` 逐步完成协议、执行
 - [ ] Bridge 不执行 Tool，Tool Executor 不调用 Bridge。
 - [ ] Usage、finish reason、请求 ID 和错误类别已标准化。
 - [ ] MockBridge 和所有真实 Adapter 均通过共享合约测试。
-- [ ] 除 `armillae-bridge-rig` 外没有 crate 依赖或暴露 rig 类型。
+- [ ] 除 `armillae-llm-rig` 外没有 crate 依赖或暴露 rig 类型。
 - [ ] 格式检查、Clippy、单元测试、文档构建和离线合约测试全部通过。
 - [ ] `docs/DESIGN.md`、`TODO.md`、示例和当前实现保持一致。
 
@@ -275,4 +276,7 @@ API 冻结前验证 rig 低层能力，`P1` 至 `P6` 逐步完成协议、执行
 - 人工审批、权限与副作用策略；
 - MCP、远程或录制/回放 ToolExecutor；
 - 多模态内容、Provider 路由、回退与负载均衡；
+- `armillae-embedding` 与 Provider 无关的 Embedding Bridge；
+- `armillae-vector-store` 与具体向量数据库 Adapter；
+- `armillae-rag` 对 Embedding、Vector Store、重排、上下文组装和 LLM 调用的上层编排；
 - Conversation Memory、叙事上下文、完整 Agent 和世界运行时。

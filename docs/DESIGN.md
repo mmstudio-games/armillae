@@ -37,6 +37,11 @@ LLM Bridge ───────────────► LLM
 
 未来可以在这两个模块之上实现 `armillae-turn`，封装一次用户交互内的有界 Tool Loop；该层不应要求修改本设计中的 Bridge 或 Tool Executor 核心接口。
 
+长期的检索与知识增强能力按独立职责演进：`armillae-embedding` 提供 Provider 无关的
+Embedding Bridge，`armillae-vector-store` 提供数据库无关的向量存储与检索接口，未来的
+`armillae-rag` 组合 Embedding、Vector Store、重排、上下文组装与 LLM 调用。上述能力均不
+属于第一阶段，当前 LLM Bridge 不承载 Embedding、向量存储或 RAG 编排。
+
 ## 2. 术语
 
 ### 2.1 Model Call
@@ -92,7 +97,7 @@ Tool 执行结果的协议表示。下游可以将其加入消息历史，并通
 - 自动 Tool Loop 或 Turn Runner；
 - 完整 Agent、规划器或工作流编排；
 - 跨 Turn 的 Conversation Memory；
-- RAG、向量数据库或上下文检索；
+- Embedding、RAG、向量数据库或上下文检索；
 - Tool 批量调度、并发策略、自动重试或人工审批；
 - 世界状态、叙事状态或游戏事务；
 - 长期 transcript 持久化和存档；
@@ -103,7 +108,8 @@ Tool 执行结果的协议表示。下游可以将其加入消息历史，并通
 
 ### 4.1 Armillae 拥有公共协议，rig 仅负责适配
 
-Armillae 的公共 API、配置和持久化数据中不得暴露 rig 类型。`rig-core` 只允许出现在 `armillae-bridge-rig` 中。
+Armillae 的公共 API、配置和持久化数据中不得暴露 rig 类型。第一阶段的 `rig-core` 只允许
+出现在 `armillae-llm-rig` 中。
 
 原因如下：
 
@@ -112,7 +118,7 @@ Armillae 的公共 API、配置和持久化数据中不得暴露 rig 类型。`r
 - Armillae 需要由配置在运行时创建异构 Provider 实例，因此需要自己的 object-safe Bridge。
 - 未来可以增加基于其他库或原生 SDK 的 Adapter，而不改变下游接口。
 
-### 4.2 Bridge 只执行一次 Model Call
+### 4.2 LLM Bridge 只执行一次 Model Call
 
 Bridge 接收完整请求并返回一次模型响应。即使响应包含 ToolCall，Bridge 也不会执行 Tool 或继续调用模型。
 
@@ -128,7 +134,31 @@ Bridge 接收完整请求并返回一次模型响应。即使响应包含 ToolCa
 
 统一协议覆盖稳定的公共能力，同时提供受控的 Provider 扩展字段。无法统一的输入和输出不应被静默丢弃。
 
+### 4.6 按模型能力划分 crate
+
+当前提供 LLM Bridge 的 crate 命名为 `armillae-llm`，其 rig Adapter 命名为
+`armillae-llm-rig`。`Bridge` 保留为职责和 trait 概念，例如 `LlmBridge`；crate 名使用具体
+模型能力，避免未来出现多个 Bridge 后产生歧义。
+
+未来能力按以下边界独立演进，不合并进 `armillae-llm`：
+
+- `armillae-embedding`：一次或批量 Embedding Model Call，统一 Dense、Sparse 和
+  Multivector 等能力差异；对应公共接口为 `EmbeddingBridge`。
+- `armillae-vector-store`：数据库无关的向量写入、删除、过滤与检索接口；具体数据库通过
+  独立 Adapter 接入。
+- `armillae-rag`：组合 Embedding、Vector Store、可选重排、上下文组装和 LLM 调用的上层
+  编排。
+
+LLM、Embedding 和 Vector Store 的请求、响应、能力与错误语义分别定义，不抽象一个统一的
+万能 Bridge trait。只有在实际实现暴露稳定的共同需求后，才考虑复用认证、Endpoint 或传输
+配置。该命名与长期边界决定不改变第一阶段范围。
+
 ## 5. Workspace 与 crate 结构
+
+Workspace 使用 Rust 2024 edition 和 Cargo resolver 3。根 manifest 统一管理 workspace package
+元数据；各 crate 在初始化阶段只保留空的 library target，不提前实现公共类型或业务逻辑。
+初始化同时建立设计要求的本地 crate 依赖方向，并提供统一的格式检查、Clippy、测试和文档
+构建命令。
 
 ```text
 armillae/
@@ -144,7 +174,7 @@ armillae/
 │   │       ├── usage.rs
 │   │       └── error.rs
 │   │
-│   ├── armillae-bridge/
+│   ├── armillae-llm/
 │   │   └── src/
 │   │       ├── lib.rs
 │   │       ├── bridge.rs
@@ -164,7 +194,7 @@ armillae/
 │   │       ├── context.rs
 │   │       └── error.rs
 │   │
-│   └── armillae-bridge-rig/
+│   └── armillae-llm-rig/
 │       └── src/
 │           ├── lib.rs
 │           ├── adapter.rs
@@ -193,6 +223,12 @@ armillae/
 ```text
 crates/armillae/          # 稳定后提供 facade 和常用 re-export
 crates/armillae-turn/     # 自动或显式驱动一次完整 Turn
+crates/armillae-embedding/        # Provider 无关的 Embedding Bridge
+crates/armillae-embedding-rig/    # rig Embedding Adapter（若经 Spike 验证后采用）
+crates/armillae-vector-store/     # 数据库无关的向量存储与检索接口
+crates/armillae-vector-qdrant/    # Qdrant Adapter 示例
+crates/armillae-vector-pgvector/  # pgvector Adapter 示例
+crates/armillae-rag/              # 组合检索、重排、上下文组装与 LLM 调用
 ```
 
 ### 5.1 依赖方向
@@ -201,17 +237,17 @@ crates/armillae-turn/     # 自动或显式驱动一次完整 Turn
                    armillae-core
                     ▲         ▲
                     │         │
-           armillae-bridge  armillae-tools
+              armillae-llm  armillae-tools
                     ▲
                     │
-          armillae-bridge-rig
+             armillae-llm-rig
 ```
 
 约束：
 
 - `armillae-core` 不依赖异步运行时、HTTP Client 或 LLM SDK。
-- `armillae-bridge` 与 `armillae-tools` 不互相依赖。
-- `armillae-bridge-rig` 是唯一依赖 `rig-core` 的 crate。
+- `armillae-llm` 与 `armillae-tools` 不互相依赖。
+- 第一阶段只有 `armillae-llm-rig` 依赖 `rig-core`。
 - Provider 专用类型不能出现在其他 crate 的公共 API 中。
 
 ### 5.2 预期依赖
@@ -221,11 +257,15 @@ crates/armillae-turn/     # 自动或显式驱动一次完整 Turn
 | crate | 主要依赖 |
 |---|---|
 | `armillae-core` | `serde`、`serde_json`、`schemars`、`thiserror` |
-| `armillae-bridge` | `armillae-core`、`futures-core`/`futures-util`、`serde`、`serde_json`、`toml`、`url`、`secrecy` |
+| `armillae-llm` | `armillae-core`、`futures-core`/`futures-util`、`serde`、`serde_json`、`toml`、`url`、`secrecy` |
 | `armillae-tools` | `armillae-core`、`futures-util`、`schemars`、`serde` |
-| `armillae-bridge-rig` | `armillae-core`、`armillae-bridge`、`rig-core`、`tokio` |
+| `armillae-llm-rig` | `armillae-core`、`armillae-llm`、`rig-core`、`tokio` |
 
 公共 Bridge 和 Tool 接口只暴露标准 `Future`/`Stream` 语义，不把 Tokio 类型放入协议层。首个 rig Adapter 可以使用 Tokio 作为执行环境。rig 依赖以 Spike 验证过的精确版本锁定；本设计调研基线为 `rig-core = 0.41.0`。
+
+Workspace 初始化阶段只添加上述 crate 之间的本地 path 依赖。外部依赖在对应实现开始且实际
+需要时通过 Cargo CLI 引入，避免空 crate 提前携带未使用依赖；这不改变本节记录的第一阶段
+预期依赖与版本约束。
 
 ## 6. `armillae-core`：共享协议
 
@@ -407,7 +447,7 @@ pub struct ProviderData {
 
 ProviderData 不能用于绕过已经存在的标准字段。
 
-## 7. `armillae-bridge`：一次模型调用
+## 7. `armillae-llm`：LLM Bridge 与一次模型调用
 
 ### 7.1 Bridge 接口
 
@@ -616,7 +656,7 @@ pub enum CredentialRef {
 示例 TOML：
 
 ```toml
-api_version = "armillae.bridge/v1alpha1"
+api_version = "armillae.llm/v1alpha1"
 driver = "rig"
 provider = "openai"
 model = "example-model"
@@ -839,7 +879,7 @@ Executor 返回宿主错误还是构造 `ToolResult { is_error: true }` 不应�
 - `ToolExecutionError` 表示执行 API 失败。
 - 是否将该错误转成模型可见的 ToolResult，由下游或未来 Turn 策略决定。
 
-## 9. `armillae-bridge-rig`：rig Adapter
+## 9. `armillae-llm-rig`：rig LLM Adapter
 
 ### 9.1 使用范围
 
@@ -1063,7 +1103,7 @@ Spike 代码可以是临时实验，不作为公共 API。若低层 API 无法�
 - 实现 `ToolContext`、`ToolExecutor` 和 `ToolRegistry`。
 - 完成参数、Schema、执行和错误合约测试。
 
-### P3：`armillae-bridge` 与 Mock
+### P3：`armillae-llm` 与 Mock
 
 - 实现 `LlmBridge`、能力和错误模型。
 - 实现配置解析、SecretResolver 和 Factory 接口。
@@ -1101,7 +1141,7 @@ Spike 代码可以是临时实验，不作为公共 API。若低层 API 无法�
 9. Bridge 不执行 Tool，Tool Executor 不调用 Bridge。
 10. Usage、finish reason、请求 ID 和错误类别被标准化。
 11. MockBridge 和所有真实 Adapter 通过共享合约测试。
-12. 除 `armillae-bridge-rig` 外没有 crate 依赖或暴露 rig 类型。
+12. 除 `armillae-llm-rig` 外没有 crate 依赖或暴露 rig 类型。
 
 ## 15. 风险与应对
 
@@ -1127,7 +1167,8 @@ Spike 代码可以是临时实验，不作为公共 API。若低层 API 无法�
 
 风险：在缺少真实 Provider 反馈前设计过多未来能力。
 
-应对：第一阶段只支持文本与 Tool Calling；不实现 Turn、Agent、Memory、RAG 和调度策略；多模态和插件机制在有明确需求后扩展。
+应对：第一阶段只支持文本与 Tool Calling；不实现 Turn、Agent、Memory、Embedding、Vector
+Store、RAG 和调度策略；多模态和插件机制在有明确需求后扩展。
 
 ### 15.5 Secret 和敏感内容泄漏
 
@@ -1137,7 +1178,7 @@ Spike 代码可以是临时实验，不作为公共 API。若低层 API 无法�
 
 ## 16. 后续演进
 
-Bridge 和 Tool Executor 稳定后，可以在不修改其核心协议的前提下新增：
+LLM Bridge 和 Tool Executor 稳定后，可以在不修改其核心协议的前提下新增：
 
 - `armillae-turn`：自动 Driver 与可逐步推进的 Turn 状态机；
 - 多 ToolCall 的串行、并行或 Executor-defined 调度；
@@ -1147,6 +1188,9 @@ Bridge 和 Tool Executor 稳定后，可以在不修改其核心协议的前提�
 - 多模态 Message Content；
 - Provider 路由、回退和负载均衡；
 - Conversation Memory 与叙事上下文；
+- `armillae-embedding`：以 `EmbeddingBridge` 封装一次或批量 Embedding 调用；
+- `armillae-vector-store`：以 `VectorStore` 封装数据库无关的向量写入、过滤和检索；
+- `armillae-rag`：组合 LLM、Embedding、Vector Store、可选重排和上下文组装；
 - 更高层 Agent 和世界运行时。
 
 未来 Turn 的组合关系应保持为：
@@ -1159,6 +1203,19 @@ armillae-turn
 
 而不是让 Bridge 依赖 Turn 或让 Tool Executor 持有 Bridge。
 
+未来 RAG 的组合关系应保持为：
+
+```text
+armillae-rag
+    ├── armillae-llm          → LlmBridge
+    ├── armillae-embedding    → EmbeddingBridge
+    └── armillae-vector-store → VectorStore
+```
+
+具体模型或数据库集成分别放在能力对应的 Adapter crate 中，例如 `armillae-embedding-rig`、
+`armillae-vector-qdrant` 和 `armillae-vector-pgvector`。RAG 是这些能力的上层编排，不作为
+数据库抽象，也不反向进入任一底层 Bridge。
+
 ## 17. 总结
 
 第一阶段的架构边界是：
@@ -1166,6 +1223,9 @@ armillae-turn
 > LLM Bridge 负责一次 Provider 无关的模型调用和 Tool Calling 协议传输；Tool Executor 负责一次 ToolCall 的类型安全执行；是否继续调用模型由下游显式决定。
 
 这一边界既能满足当前 ToolCall 与内容输出需求，也为未来一次完整 Turn 的自动驱动留下稳定组合点。rig-rs 被用于降低 Provider 接入成本，但被严格隔离为可替换 Adapter，Armillae 自己掌握公共协议和长期兼容性。
+
+第一阶段的 LLM Bridge 由 `armillae-llm` 提供；未来的 Embedding Bridge、Vector Store 和 RAG
+分别由独立 crate 提供，避免把不同请求、错误和生命周期语义压入一个通用 Bridge。
 
 ## 18. 调研参考
 
@@ -1176,4 +1236,3 @@ armillae-turn
 - [Rig GitHub 仓库](https://github.com/0xPlaygrounds/rig)
 
 外部依赖的版本、能力和行为以实现 Spike 及锁定版本的源码为准，不能仅依赖本文链接所指向的 latest 文档。
-

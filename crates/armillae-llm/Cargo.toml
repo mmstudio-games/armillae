@@ -1,0 +1,7 @@
+[package]
+name = "armillae-llm"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+armillae-core = { version = "0.1.0", path = "../armillae-core" }

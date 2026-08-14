@@ -46,10 +46,12 @@
 - `LlmBridge` 只负责一次 Provider 无关的 Model Call，不执行 Tool，也不自动继续调用模型。
 - `ToolExecutor` 只负责一次 `ToolCall -> ToolResult`，不持有或调用 Bridge。
 - 多 ToolCall 的顺序、并发、审批、重试和错误反馈策略由下游负责。
-- Armillae 拥有公共协议；`rig-core` 只能出现在 `armillae-bridge-rig` 中，其类型不得穿透
-  其他 crate 的公共 API、配置或持久化数据。
+- Armillae 拥有公共协议；第一阶段的 `rig-core` 只能出现在 `armillae-llm-rig` 中，其类型
+  不得穿透其他 crate 的公共 API、配置或持久化数据。
 - `armillae-core` 不依赖异步运行时、HTTP Client 或 LLM SDK。
-- `armillae-bridge` 与 `armillae-tools` 不互相依赖。
+- `armillae-llm` 与 `armillae-tools` 不互相依赖。
+- Embedding、Vector Store 和 RAG 不属于第一阶段，也不得合并进 `armillae-llm`；未来分别由
+  `armillae-embedding`、`armillae-vector-store` 和 `armillae-rag` 承担。
 - Provider 差异必须通过能力预检、显式转换、`ProviderData` 或命名空间扩展表达；不得静默
   丢弃 Role、ToolCall、ToolResult、Usage、错误或未知 Provider 事件。
 - ToolCall ID、内容顺序和流式内容索引必须在协议转换中保持稳定。
@@ -115,4 +117,3 @@
   `TODO.md`。
 - 如果技术方案没有变化，明确写明“本次技术方案相对既有设计无变动”。
 - 列出实际完成的验证，以及任何尚未完成、被阻塞或需要用户决定的事项。
-
