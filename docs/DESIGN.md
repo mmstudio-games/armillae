@@ -1,0 +1,1179 @@
+# Armillae 第一阶段技术设计：LLM Bridge 与 Tool Executor
+
+> 状态：Draft  
+> 设计基线：2026-08-13  
+> 适用范围：Armillae 第一阶段
+
+## 1. 背景
+
+Armillae 的长期目标是成为一个面向 Agentic 叙事的通用运行时，可被上层用于构建叙事引擎、TRPG 运行时以及大世界游戏引擎。长期系统将涉及上下文组织、叙事状态、世界状态、工具调度、持久化、回放以及更高层的 Agent 行为，但这些能力不属于第一阶段的实现范围。
+
+第一阶段聚焦两个基础设施能力：
+
+1. **LLM Bridge**：通过统一协议连接不同 LLM Provider，支持普通内容、流式内容以及完整 Tool Calling 协议。
+2. **Tool Executor**：让下游以类型安全的方式实现 Tool，并可根据 LLM 返回的 `ToolCall` 显式执行 Tool。
+
+Armillae 在本阶段不实现完整 Agent，也不实现自动的多轮 Tool Continuation Loop。下游可以用 Bridge 和 Tool Executor 自行组织如下流程：
+
+```text
+输入上下文
+    │
+    ▼
+LLM Bridge ───────────────► LLM
+    │                        │
+    │                        ▼
+    │                    ToolCall
+    │                        │
+    ▼                        ▼
+下游调度器 ◄────────── Tool Executor
+    │
+    │ 将 Assistant ToolCall 与 ToolResult 加入上下文
+    ▼
+再次调用 LLM Bridge
+    │
+    ▼
+最终内容
+```
+
+未来可以在这两个模块之上实现 `armillae-turn`，封装一次用户交互内的有界 Tool Loop；该层不应要求修改本设计中的 Bridge 或 Tool Executor 核心接口。
+
+## 2. 术语
+
+### 2.1 Model Call
+
+一次对模型 Provider 的请求。输入是一组消息、Tool 定义和生成参数，输出是 Assistant 内容、ToolCall 或两者的组合。
+
+### 2.2 Tool Definition
+
+提供给 LLM 的工具描述，包含名称、说明和 JSON Schema。它只告诉模型“有哪些能力可被请求”，不包含实际执行逻辑。
+
+### 2.3 ToolCall
+
+LLM 返回的结构化调用意图，包含调用 ID、工具名称和参数。ToolCall 本身不产生任何业务副作用。
+
+### 2.4 Tool Execution
+
+宿主根据 ToolCall 查找 Tool 实现、解析参数并实际执行函数、网络请求或游戏操作的过程。
+
+### 2.5 ToolResult
+
+Tool 执行结果的协议表示。下游可以将其加入消息历史，并通过新的 Model Call 交还给 LLM。
+
+### 2.6 Turn
+
+一次用户输入到最终 Assistant 输出的完整交互，中间可能包含多个 Model Call 和 Tool Execution。Turn 是未来模块，本阶段不实现。
+
+### 2.7 Agent
+
+跨 Turn 持有目标、记忆、规划与自主行为的上层系统。Agent 不属于本阶段范围。
+
+## 3. 目标与非目标
+
+### 3.1 目标
+
+- 定义稳定、Provider 无关的消息和 Completion 协议。
+- 支持从结构化配置创建 LLM Bridge；配置既可从文件解析，也可在运行时动态构造。
+- 通过同一接口使用不同 LLM Provider。
+- 支持非流式和流式 Model Call。
+- 支持完整的 Tool Calling 协议：
+  - 向模型发送 Tool Definition；
+  - 接收一个或多个 ToolCall；
+  - 在消息历史中表达 Assistant ToolCall；
+  - 将 ToolResult 作为输入发送给模型；
+  - 在流式响应中重组 ToolCall 参数。
+- 提供类型安全的 Tool 开发接口和可动态注册的 Tool Executor。
+- 隔离 rig-rs，使其仅作为可替换的 Provider Adapter。
+- 提供 Mock、合约测试和协议转换测试，保证未来更换 Adapter 时上层行为不变。
+
+### 3.2 非目标
+
+第一阶段明确不实现：
+
+- 自动 Tool Loop 或 Turn Runner；
+- 完整 Agent、规划器或工作流编排；
+- 跨 Turn 的 Conversation Memory；
+- RAG、向量数据库或上下文检索；
+- Tool 批量调度、并发策略、自动重试或人工审批；
+- 世界状态、叙事状态或游戏事务；
+- 长期 transcript 持久化和存档；
+- 由 Bridge 自动执行 Tool；
+- 由 Tool Executor 自动再次调用 LLM。
+
+## 4. 核心设计决策
+
+### 4.1 Armillae 拥有公共协议，rig 仅负责适配
+
+Armillae 的公共 API、配置和持久化数据中不得暴露 rig 类型。`rig-core` 只允许出现在 `armillae-bridge-rig` 中。
+
+原因如下：
+
+- Armillae 的协议稳定性不能绑定到一个仍在快速演进的 0.x 依赖。
+- rig 的 `CompletionModel` 使用关联类型和返回位置 `impl Future`，不能直接作为 `dyn CompletionModel` 使用。
+- Armillae 需要由配置在运行时创建异构 Provider 实例，因此需要自己的 object-safe Bridge。
+- 未来可以增加基于其他库或原生 SDK 的 Adapter，而不改变下游接口。
+
+### 4.2 Bridge 只执行一次 Model Call
+
+Bridge 接收完整请求并返回一次模型响应。即使响应包含 ToolCall，Bridge 也不会执行 Tool 或继续调用模型。
+
+### 4.3 Tool 协议与 Tool 实现分离，但 Schema 与实现保持关联
+
+`ToolDefinition`、`ToolCall` 和 `ToolResult` 是共享协议；类型化 `Tool` 同时提供参数类型和执行逻辑，由参数类型生成 JSON Schema，避免 Schema 与实现漂移。
+
+### 4.4 Tool Executor 负责单个 ToolCall 的执行
+
+本阶段的 Executor 只定义一次 `ToolCall -> ToolResult`。多个 ToolCall 的顺序、并发、审批和失败策略由调用方决定。
+
+### 4.5 保留 Provider 扩展而不追求最低公分母
+
+统一协议覆盖稳定的公共能力，同时提供受控的 Provider 扩展字段。无法统一的输入和输出不应被静默丢弃。
+
+## 5. Workspace 与 crate 结构
+
+```text
+armillae/
+├── Cargo.toml
+├── crates/
+│   ├── armillae-core/
+│   │   └── src/
+│   │       ├── lib.rs
+│   │       ├── message.rs
+│   │       ├── completion.rs
+│   │       ├── tool.rs
+│   │       ├── stream.rs
+│   │       ├── usage.rs
+│   │       └── error.rs
+│   │
+│   ├── armillae-bridge/
+│   │   └── src/
+│   │       ├── lib.rs
+│   │       ├── bridge.rs
+│   │       ├── capability.rs
+│   │       ├── config.rs
+│   │       ├── factory.rs
+│   │       ├── secret.rs
+│   │       └── mock.rs
+│   │
+│   ├── armillae-tools/
+│   │   └── src/
+│   │       ├── lib.rs
+│   │       ├── tool.rs
+│   │       ├── dyn_tool.rs
+│   │       ├── executor.rs
+│   │       ├── registry.rs
+│   │       ├── context.rs
+│   │       └── error.rs
+│   │
+│   └── armillae-bridge-rig/
+│       └── src/
+│           ├── lib.rs
+│           ├── adapter.rs
+│           ├── factory.rs
+│           ├── convert/
+│           │   ├── mod.rs
+│           │   ├── message.rs
+│           │   ├── request.rs
+│           │   ├── response.rs
+│           │   ├── stream.rs
+│           │   └── tool.rs
+│           └── providers/
+│               ├── mod.rs
+│               ├── openai.rs
+│               ├── anthropic.rs
+│               └── ollama.rs
+│
+└── examples/
+    ├── simple_completion.rs
+    ├── streaming.rs
+    └── manual_tool_flow.rs
+```
+
+未来可增加：
+
+```text
+crates/armillae/          # 稳定后提供 facade 和常用 re-export
+crates/armillae-turn/     # 自动或显式驱动一次完整 Turn
+```
+
+### 5.1 依赖方向
+
+```text
+                   armillae-core
+                    ▲         ▲
+                    │         │
+           armillae-bridge  armillae-tools
+                    ▲
+                    │
+          armillae-bridge-rig
+```
+
+约束：
+
+- `armillae-core` 不依赖异步运行时、HTTP Client 或 LLM SDK。
+- `armillae-bridge` 与 `armillae-tools` 不互相依赖。
+- `armillae-bridge-rig` 是唯一依赖 `rig-core` 的 crate。
+- Provider 专用类型不能出现在其他 crate 的公共 API 中。
+
+### 5.2 预期依赖
+
+第一阶段应保持依赖最小化：
+
+| crate | 主要依赖 |
+|---|---|
+| `armillae-core` | `serde`、`serde_json`、`schemars`、`thiserror` |
+| `armillae-bridge` | `armillae-core`、`futures-core`/`futures-util`、`serde`、`serde_json`、`toml`、`url`、`secrecy` |
+| `armillae-tools` | `armillae-core`、`futures-util`、`schemars`、`serde` |
+| `armillae-bridge-rig` | `armillae-core`、`armillae-bridge`、`rig-core`、`tokio` |
+
+公共 Bridge 和 Tool 接口只暴露标准 `Future`/`Stream` 语义，不把 Tokio 类型放入协议层。首个 rig Adapter 可以使用 Tokio 作为执行环境。rig 依赖以 Spike 验证过的精确版本锁定；本设计调研基线为 `rig-core = 0.41.0`。
+
+## 6. `armillae-core`：共享协议
+
+公共协议类型默认派生 `Clone`、`Debug`、`Serialize` 和 `Deserialize`。预期继续增加变体的公共枚举应标记 `#[non_exhaustive]`，避免新增 Provider 能力时迫使下游进行同步升级。配置通过显式 `api_version` 管理文件格式演进。
+
+### 6.1 Message
+
+消息必须能够无损表达 Tool Calling 历史。第一阶段的最小模型如下：
+
+```rust
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Message {
+    pub role: Role,
+    pub content: Vec<ContentPart>,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub enum Role {
+    System,
+    Developer,
+    User,
+    Assistant,
+    Tool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum ContentPart {
+    Text(TextContent),
+    ToolCall(ToolCall),
+    ToolResult(ToolResult),
+    ProviderData(ProviderData),
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TextContent {
+    pub text: String,
+}
+```
+
+约束：
+
+- `ToolCall` 必须保留 Provider 返回的调用 ID。
+- 单个 Assistant Message 可以包含文本和多个 ToolCall。
+- `ContentPart` 的顺序必须保持不变。
+- Provider 不支持某种 Role 时，Adapter 必须按明确策略转换或报错，不能静默丢弃。
+- 多模态内容暂不进入 MVP；后续可以为 `ContentPart` 增加 Image、Audio、Document 等变体。
+
+### 6.2 Tool 协议
+
+```rust
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ToolDefinition {
+    pub name: String,
+    pub description: String,
+    pub input_schema: serde_json::Value,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ToolCall {
+    pub id: String,
+    pub name: String,
+    pub arguments: serde_json::Value,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ToolResult {
+    pub call_id: String,
+    pub content: Vec<ToolResultContent>,
+    pub is_error: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum ToolResultContent {
+    Text { text: String },
+    Json { value: serde_json::Value },
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum ToolChoice {
+    Auto,
+    None,
+    Required,
+    Specific { name: String },
+}
+```
+
+`ToolCall.arguments` 在非流式响应和流式完成事件中必须是完整 JSON 值。只有流式增量事件允许暂时携带未完成的 JSON 字符串片段。
+
+### 6.3 Completion Request
+
+```rust
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CompletionRequest {
+    pub messages: Vec<Message>,
+    pub tools: Vec<ToolDefinition>,
+    pub tool_choice: Option<ToolChoice>,
+    pub output_format: Option<OutputFormat>,
+    pub generation: GenerationOptions,
+    pub extensions: ProviderExtensions,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct GenerationOptions {
+    pub temperature: Option<f64>,
+    pub max_output_tokens: Option<u64>,
+    pub stop: Vec<String>,
+    pub seed: Option<u64>,
+}
+```
+
+第一阶段仅标准化有明确跨 Provider 语义的参数。特有参数通过 `ProviderExtensions` 传递：
+
+```rust
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct ProviderExtensions {
+    pub values: std::collections::BTreeMap<String, serde_json::Value>,
+}
+```
+
+扩展键以 Provider 或 Adapter 命名空间隔离，例如 `openai.reasoning_effort`。Adapter 只读取自己的命名空间；未知扩展默认报错，是否允许忽略必须由显式兼容选项控制。
+
+### 6.4 Completion Response
+
+```rust
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CompletionResponse {
+    pub id: Option<String>,
+    pub model: Option<String>,
+    pub content: Vec<AssistantContent>,
+    pub finish_reason: FinishReason,
+    pub usage: Option<TokenUsage>,
+    pub provider_metadata: serde_json::Value,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum AssistantContent {
+    Text(TextContent),
+    ToolCall(ToolCall),
+    ProviderData(ProviderData),
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum FinishReason {
+    Stop,
+    Length,
+    ToolCall,
+    ContentFilter,
+    Cancelled,
+    Unknown(String),
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct TokenUsage {
+    pub input_tokens: Option<u64>,
+    pub output_tokens: Option<u64>,
+    pub total_tokens: Option<u64>,
+    pub cached_input_tokens: Option<u64>,
+}
+```
+
+响应不能退化为 `text + tool_calls` 两个字段，因为不同内容可能交错出现，且未来可能加入更多 Assistant 内容类型。
+
+### 6.5 ProviderData
+
+```rust
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ProviderData {
+    pub provider: String,
+    pub kind: String,
+    pub value: serde_json::Value,
+}
+```
+
+它是兼容新 Provider 内容的逃生舱，主要用于：
+
+- 暂未标准化的响应项；
+- Provider 原生托管工具事件；
+- 需要透传但不参与通用逻辑的数据。
+
+ProviderData 不能用于绕过已经存在的标准字段。
+
+## 7. `armillae-bridge`：一次模型调用
+
+### 7.1 Bridge 接口
+
+```rust
+pub type BoxFuture<'a, T> =
+    Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
+pub type CompletionStream =
+    Pin<Box<dyn Stream<Item = Result<CompletionEvent, BridgeError>> + Send>>;
+
+pub trait LlmBridge: Send + Sync {
+    fn capabilities(&self) -> BridgeCapabilities;
+
+    fn complete<'a>(
+        &'a self,
+        request: CompletionRequest,
+    ) -> BoxFuture<'a, Result<CompletionResponse, BridgeError>>;
+
+    fn stream<'a>(
+        &'a self,
+        request: CompletionRequest,
+    ) -> BoxFuture<'a, Result<CompletionStream, BridgeError>>;
+}
+```
+
+选择 object-safe 接口的原因是 Bridge 需要通过结构化配置在运行时创建，并以 `Arc<dyn LlmBridge>` 被下游持有。
+
+取消语义遵循 Rust Future/Stream 的生命周期：调用方 drop Future 或 Stream 即表示取消。Adapter 必须确保底层 HTTP 请求随之终止或尽快释放。传输和请求超时由 Bridge 配置控制。
+
+### 7.2 能力模型
+
+```rust
+#[derive(Clone, Debug)]
+pub struct BridgeCapabilities {
+    pub streaming: bool,
+    pub tool_calling: bool,
+    pub parallel_tool_calls: bool,
+    pub structured_output: bool,
+    pub system_message: bool,
+    pub developer_message: bool,
+}
+```
+
+Bridge 在发送请求前必须验证能力：
+
+- 请求包含 Tool，但模型不支持 Tool Calling：返回 `UnsupportedCapability`。
+- 请求要求 Specific Tool，而 Provider 不支持：返回错误，不自动降级。
+- Provider 不支持 Developer role：按配置的兼容策略转换，或明确拒绝。
+- 不支持 Streaming：`stream` 直接返回能力错误，而不是伪造流。
+
+能力信息可以来自 Provider 类型、静态能力表或配置覆盖。配置覆盖只能收紧能力，默认不能声称底层实际不具备的能力。
+
+### 7.3 流式事件
+
+Bridge 对外发送语义事件，不暴露 Provider SSE/NDJSON chunk：
+
+```rust
+#[derive(Clone, Debug)]
+pub enum CompletionEvent {
+    ResponseStarted {
+        id: Option<String>,
+        model: Option<String>,
+    },
+    ContentStarted {
+        index: usize,
+        kind: ContentKind,
+    },
+    TextDelta {
+        index: usize,
+        text: String,
+    },
+    ToolCallStarted {
+        index: usize,
+        id: String,
+        name: Option<String>,
+    },
+    ToolCallArgumentsDelta {
+        index: usize,
+        fragment: String,
+    },
+    ToolCallCompleted {
+        index: usize,
+        call: ToolCall,
+    },
+    ContentCompleted {
+        index: usize,
+    },
+    Usage {
+        usage: TokenUsage,
+    },
+    ProviderEvent {
+        data: ProviderData,
+    },
+    ResponseCompleted {
+        response: CompletionResponse,
+    },
+}
+```
+
+```rust
+#[derive(Clone, Copy, Debug)]
+#[non_exhaustive]
+pub enum ContentKind {
+    Text,
+    ToolCall,
+    ProviderData,
+}
+```
+
+流式协议必须满足：
+
+- `index` 在同一响应内稳定标识内容块。
+- Tool 参数可以跨任意网络 chunk 分割。
+- `ToolCallArgumentsDelta` 保留原始字符串片段。
+- 只有成功组装并解析完整 JSON 后才产生 `ToolCallCompleted`。
+- 成功流必须以唯一的 `ResponseCompleted` 结束。
+- `ResponseCompleted.response` 与等价非流式请求的语义结构一致。
+- 流在完成事件前失败时返回 `StreamInterrupted`，不得构造虚假的完整响应。
+- 未识别 Provider 事件通过 `ProviderEvent` 暴露，不能静默丢弃。
+
+### 7.4 错误模型
+
+```rust
+#[derive(Debug, thiserror::Error)]
+pub enum BridgeError {
+    #[error("invalid bridge configuration: {message}")]
+    InvalidConfiguration { message: String },
+
+    #[error("unsupported capability: {capability}")]
+    UnsupportedCapability { capability: String },
+
+    #[error("invalid request: {message}")]
+    InvalidRequest { message: String },
+
+    #[error("authentication failed")]
+    Authentication { metadata: ErrorMetadata },
+
+    #[error("permission denied")]
+    PermissionDenied { metadata: ErrorMetadata },
+
+    #[error("rate limited")]
+    RateLimited {
+        retry_after: Option<Duration>,
+        metadata: ErrorMetadata,
+    },
+
+    #[error("request timed out")]
+    Timeout { metadata: ErrorMetadata },
+
+    #[error("request cancelled")]
+    Cancelled,
+
+    #[error("transport error")]
+    Transport {
+        retryable: bool,
+        metadata: ErrorMetadata,
+    },
+
+    #[error("provider rejected request: {message}")]
+    ProviderRejected {
+        code: Option<String>,
+        message: String,
+        metadata: ErrorMetadata,
+    },
+
+    #[error("invalid provider response: {message}")]
+    InvalidProviderResponse {
+        message: String,
+        metadata: ErrorMetadata,
+    },
+
+    #[error("stream interrupted")]
+    StreamInterrupted { metadata: ErrorMetadata },
+}
+```
+
+`ErrorMetadata` 至少包含 Provider、HTTP 状态码和请求 ID。错误日志和 Display 不得包含 API Key、Authorization header 或完整敏感响应。
+
+Bridge 只提供 `retryable`、`retry_after` 等事实，不决定是否重新执行推理请求。自动重试策略属于未来 Turn 或下游调度器。
+
+### 7.5 配置
+
+```rust
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BridgeConfig {
+    pub api_version: String,
+    pub driver: String,
+    pub provider: String,
+    pub model: String,
+    pub endpoint: Option<Url>,
+    pub credential: Option<CredentialRef>,
+    pub transport: TransportConfig,
+    pub defaults: GenerationOptions,
+    pub provider_options: serde_json::Value,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum CredentialRef {
+    Environment { name: String },
+    File { path: PathBuf },
+    Resolver { key: String },
+}
+```
+
+示例 TOML：
+
+```toml
+api_version = "armillae.bridge/v1alpha1"
+driver = "rig"
+provider = "openai"
+model = "example-model"
+endpoint = "https://api.openai.com/v1"
+
+[credential]
+type = "environment"
+name = "OPENAI_API_KEY"
+
+[transport]
+connect_timeout_ms = 5000
+request_timeout_ms = 60000
+
+[defaults]
+temperature = 0.7
+max_output_tokens = 2048
+
+[provider_options]
+reasoning_effort = "medium"
+```
+
+文件解析和运行时 Builder 最终生成同一个 `BridgeConfig`。配置生命周期为：
+
+```text
+TOML / JSON / Rust Builder
+           │
+           ▼
+      BridgeConfig
+           │ SecretResolver + 默认值
+           ▼
+  ResolvedBridgeConfig
+           │ 校验 + Adapter Factory
+           ▼
+   Arc<dyn LlmBridge>
+```
+
+安全约束：
+
+- Secret 值不进入可序列化配置。
+- Debug 和 tracing 输出必须脱敏。
+- 自定义 endpoint 必须通过 URL 校验；宿主可配置允许的 scheme、host 或网络范围，避免动态配置导致 SSRF。
+- `provider_options` 必须在构造阶段校验类型和已知字段。
+
+### 7.6 Factory
+
+```rust
+pub trait BridgeFactory: Send + Sync {
+    fn driver(&self) -> &'static str;
+
+    fn create<'a>(
+        &'a self,
+        config: ResolvedBridgeConfig,
+    ) -> BoxFuture<'a, Result<Arc<dyn LlmBridge>, BridgeError>>;
+}
+```
+
+第一阶段可以直接实例化 `RigBridgeFactory`。如果后续需要插件式 Adapter，再增加按 `driver` 注册的 Factory Registry；本阶段不提前实现动态插件加载。
+
+### 7.7 Mock Bridge
+
+`MockBridge` 是 Bridge 合约的一等实现，用于离线测试下游调度：
+
+```rust
+let bridge = MockBridge::scripted([
+    MockResponse::tool_call("call-1", "get_weather", json!({ "city": "上海" })),
+    MockResponse::text("上海今天有雨。"),
+]);
+```
+
+Mock 至少支持：
+
+- 固定非流式响应；
+- 按调用顺序返回脚本响应；
+- 文本流式增量；
+- ToolCall 参数分片；
+- 注入 Provider 错误和流中断；
+- 记录收到的请求用于断言。
+
+## 8. `armillae-tools`：Tool 与 Executor
+
+### 8.1 类型化 Tool
+
+```rust
+pub trait Tool: Send + Sync {
+    type Args: DeserializeOwned + JsonSchema + Send;
+    type Output: Serialize + Send;
+    type Error: std::error::Error + Send + Sync + 'static;
+
+    const NAME: &'static str;
+
+    fn description(&self) -> Cow<'static, str>;
+
+    fn call(
+        &self,
+        context: ToolContext,
+        args: Self::Args,
+    ) -> impl Future<Output = Result<Self::Output, Self::Error>> + Send;
+}
+```
+
+类型化接口为 Tool 作者提供：
+
+- 编译期参数和结果类型检查；
+- 自动参数反序列化；
+- 从 `Args` 自动生成 JSON Schema；
+- 统一错误映射。
+
+### 8.2 类型擦除 DynTool
+
+由于 `Tool` 包含关联类型，Registry 内部需要 object-safe 接口：
+
+```rust
+pub trait DynTool: Send + Sync {
+    fn definition(&self) -> ToolDefinition;
+
+    fn call_json<'a>(
+        &'a self,
+        context: ToolContext,
+        arguments: serde_json::Value,
+    ) -> BoxFuture<'a, Result<ToolOutput, ToolExecutionError>>;
+}
+```
+
+`DynTool` 的规范化成功结果为：
+
+```rust
+#[derive(Clone, Debug)]
+pub struct ToolOutput {
+    pub content: Vec<ToolResultContent>,
+}
+```
+
+blanket implementation 默认将类型化 `Tool::Output` 序列化为 `ToolResultContent::Json`。需要返回多段文本或定制内容的 Tool 可以显式返回 `ToolOutput`，或直接实现 `DynTool`。
+
+为所有满足约束的 `Tool` 提供 blanket implementation。通常只有需要完全动态 Schema 或远程代理的高级用户才直接实现 `DynTool`。
+
+### 8.3 ToolContext
+
+本阶段的 Context 应保持轻量且可扩展：
+
+```rust
+#[derive(Clone, Default)]
+pub struct ToolContext {
+    extensions: Extensions,
+}
+```
+
+`Extensions` 是类型安全的运行时 type map，可用于传递：
+
+- session/run 标识；
+- 世界状态句柄；
+- 权限或身份信息；
+- tracing context；
+- 下游自定义服务。
+
+Context 中的信息不发送给 LLM，也不要求可序列化。Armillae 不解释这些值的业务含义。
+
+### 8.4 ToolExecutor
+
+```rust
+pub trait ToolExecutor: Send + Sync {
+    fn definitions(&self) -> Vec<ToolDefinition>;
+
+    fn execute<'a>(
+        &'a self,
+        context: ToolContext,
+        call: ToolCall,
+    ) -> BoxFuture<'a, Result<ToolResult, ToolExecutionError>>;
+}
+```
+
+第一阶段语义：
+
+- 一次只执行一个 ToolCall。
+- Executor 根据 Tool 名称查找实现。
+- Executor 解析和验证 JSON 参数。
+- Executor 保留 `ToolCall.id`，生成对应的 `ToolResult.call_id`。
+- Executor 区分参数错误、未知 Tool 和执行失败。
+- Executor 不重试、不再次调用 LLM、不决定错误是否应反馈给 LLM。
+
+### 8.5 ToolRegistry
+
+```rust
+pub struct ToolRegistry {
+    tools: HashMap<String, Arc<dyn DynTool>>,
+}
+```
+
+Registry 是默认的本地 Executor 实现，提供：
+
+- 注册和注销 Tool；
+- 名称唯一性校验；
+- 生成稳定排序的 Tool Definition；
+- 按名称查找和执行；
+- ToolCall 到 ToolResult 的关联。
+
+重复注册同名 Tool 默认返回构建错误，不允许静默覆盖。
+
+### 8.6 Tool 错误
+
+```rust
+#[derive(Debug, thiserror::Error)]
+pub enum ToolExecutionError {
+    #[error("unknown tool: {name}")]
+    UnknownTool { name: String },
+
+    #[error("invalid arguments for tool {name}: {message}")]
+    InvalidArguments { name: String, message: String },
+
+    #[error("tool {name} failed: {message}")]
+    ExecutionFailed { name: String, message: String },
+
+    #[error("tool output serialization failed: {message}")]
+    OutputSerialization { message: String },
+}
+```
+
+Executor 返回宿主错误还是构造 `ToolResult { is_error: true }` 不应混为一谈：
+
+- `ToolExecutionError` 表示执行 API 失败。
+- 是否将该错误转成模型可见的 ToolResult，由下游或未来 Turn 策略决定。
+
+## 9. `armillae-bridge-rig`：rig Adapter
+
+### 9.1 使用范围
+
+本阶段使用 rig 的低层能力：
+
+- Provider Client；
+- `CompletionModel`；
+- Rig Completion Request/Response；
+- Rig Message 与 Tool Definition；
+- Provider streaming。
+
+本阶段不使用：
+
+- `rig::Agent`；
+- `AgentBuilder`；
+- `AgentRun`；
+- Rig 自动 Tool 执行；
+- Rig Memory、RAG 和 Agent Hook。
+
+### 9.2 泛型与类型擦除
+
+rig 的 `CompletionModel` 不是 dyn-compatible，因此 Adapter 内部使用泛型，对外通过 Armillae Bridge 擦除类型：
+
+```rust
+pub struct RigBridge<M> {
+    model: M,
+    capabilities: BridgeCapabilities,
+}
+
+impl<M> LlmBridge for RigBridge<M>
+where
+    M: rig_core::completion::CompletionModel + Send + Sync + 'static,
+    M::Response: Send + Sync,
+    M::StreamingResponse: Send + Sync,
+{
+    // Armillae 与 Rig 协议转换
+}
+```
+
+Factory 在运行时匹配 Provider，构造具体的 `RigBridge<M>` 后返回 `Arc<dyn LlmBridge>`。
+
+### 9.3 转换边界
+
+转换代码必须集中在 `convert` 模块，并单独测试：
+
+```text
+Armillae Message          ↔ Rig Message
+Armillae ToolDefinition   ↔ Rig ToolDefinition
+Armillae CompletionRequest → Rig CompletionRequest
+Rig CompletionResponse     → Armillae CompletionResponse
+Rig Streaming Item         → Armillae CompletionEvent
+Rig Error                  → Armillae BridgeError
+```
+
+转换必须满足：
+
+- 不丢失 ToolCall ID。
+- 不丢失多个 ToolCall 及其顺序。
+- Assistant ToolCall 和对应 ToolResult 能在下一次请求中正确关联。
+- Provider 原始未知输出转换为 ProviderData。
+- Provider 原始响应只进入受控 metadata，不把 Secret 写入日志。
+- 不依赖 Rig Agent 的 Tool 注册或执行路径。
+
+### 9.4 首批 Provider
+
+建议按以下顺序支持：
+
+1. OpenAI 或 OpenAI-compatible：验证主协议和自定义 endpoint。
+2. Anthropic：验证原生 Tool 协议和消息差异。
+3. Ollama：验证本地 Provider 和 NDJSON 流式路径。
+
+Provider 支持必须通过同一套 Bridge 合约测试，而不是分别定义不同的外部行为。
+
+## 10. 下游显式 Tool 流程
+
+第一阶段的典型用法如下：
+
+```rust
+let bridge = factory.create(config).await?;
+
+let tools = ToolRegistry::builder()
+    .register(GetWeatherTool::new(weather_client))?
+    .register(RollDiceTool)?
+    .build();
+
+let first = bridge
+    .complete(CompletionRequest {
+        messages: vec![Message::user("上海今天天气怎么样？")],
+        tools: tools.definitions(),
+        ..Default::default()
+    })
+    .await?;
+
+let mut history = vec![Message::user("上海今天天气怎么样？")];
+history.push(first.as_assistant_message());
+
+for call in first.tool_calls() {
+    let result = tools
+        .execute(context.clone(), call.clone())
+        .await?;
+    history.push(Message::tool_result(result));
+}
+
+let final_response = bridge
+    .complete(CompletionRequest {
+        messages: history,
+        tools: tools.definitions(),
+        ..Default::default()
+    })
+    .await?;
+```
+
+上述循环由下游显式编写。未来 `armillae-turn` 可以封装相同过程，但不改变 Bridge 和 Executor 的职责。
+
+## 11. 测试策略
+
+### 11.1 协议测试
+
+`armillae-core` 必须覆盖：
+
+- 所有公共类型的 Serde round-trip；
+- Assistant 文本与 ToolCall 混合内容；
+- 多 ToolCall 顺序保持；
+- ToolCall/ToolResult ID 关联；
+- 未知 finish reason 和 ProviderData 的前向兼容；
+- JSON Schema 的合法性和稳定快照。
+
+### 11.2 Tool Executor 测试
+
+使用确定性的本地 Tool 覆盖：
+
+- 自动生成 Tool Definition；
+- 正确参数执行；
+- 缺少字段、错误类型和非法 JSON 值；
+- 未知 Tool；
+- Tool 自身错误；
+- Output 序列化；
+- 重复注册；
+- ToolContext 扩展透传；
+- call ID 保持不变。
+
+### 11.3 Bridge 合约测试
+
+定义可被 Mock 和每个真实 Adapter 复用的测试套件：
+
+- 纯文本请求和响应；
+- 系统消息和多轮历史；
+- Tool Definition 输入；
+- 单 ToolCall；
+- 多 ToolCall；
+- Assistant ToolCall + ToolResult 的后续请求；
+- Usage 与 finish reason；
+- Provider 拒绝、认证失败、限流和超时映射；
+- 不支持能力的本地预检。
+
+### 11.4 Streaming 合约测试
+
+- 文本分成任意数量 chunk 后重组一致；
+- Tool 名称和参数跨 chunk 分割；
+- UTF-8 字符跨底层字节 chunk；
+- 多 ToolCall 交错增量；
+- 完成时完整 ToolCall JSON 可解析；
+- 流中断不产生 ResponseCompleted；
+- Usage 出现在最终或独立事件时均正确汇总；
+- 未知 Provider 事件不会丢失；
+- drop Stream 后底层调用被取消。
+
+### 11.5 Provider 测试分层
+
+- 转换单元测试：完全离线，不访问 Provider。
+- Mock HTTP/cassette 测试：验证请求和响应协议。
+- Live 测试：使用真实凭证，默认 ignored，仅用于发布前验证。
+
+测试夹具不得包含 API Key、Authorization header、用户隐私内容或未经脱敏的 Provider 响应。
+
+## 12. 可观测性与安全
+
+第一阶段即应提供结构化 tracing，至少包含：
+
+- Adapter 和 Provider 名称；
+- 模型名称；
+- 请求 ID；
+- 是否流式；
+- Tool Definition 数量与返回 ToolCall 数量；
+- 输入、输出和缓存 token；
+- 总延迟与首 token 延迟；
+- 标准化错误类别。
+
+默认不得记录：
+
+- API Key 或认证 header；
+- 完整消息正文；
+- 完整 Tool 参数和 ToolResult；
+- Provider 原始响应正文。
+
+需要内容级调试时必须通过显式配置启用，并允许宿主提供脱敏器。
+
+## 13. 实施计划与优先级
+
+### P0：rig 低层可行性 Spike
+
+在正式冻结 API 前验证：
+
+- 不使用 `rig::Agent`，只用 `CompletionModel`；
+- 可以发送 Tool Definition 并接收单个/多个 ToolCall；
+- 可以手工将 ToolResult 放回消息历史；
+- 流式 ToolCall 参数能够无损重组；
+- OpenAI 和 Anthropic 的差异可以被 Adapter 层消化。
+
+Spike 代码可以是临时实验，不作为公共 API。若低层 API 无法满足上述要求，应在此阶段评估 `genai` 或原生 Provider Adapter。
+
+### P1：`armillae-core`
+
+- 建立 Workspace。
+- 完成 Message、Completion、Tool、Streaming、Usage 协议。
+- 完成序列化、验证和协议单元测试。
+
+### P2：`armillae-tools`
+
+- 实现 `Tool`、`DynTool` 和 blanket implementation。
+- 实现 `ToolContext`、`ToolExecutor` 和 `ToolRegistry`。
+- 完成参数、Schema、执行和错误合约测试。
+
+### P3：`armillae-bridge` 与 Mock
+
+- 实现 `LlmBridge`、能力和错误模型。
+- 实现配置解析、SecretResolver 和 Factory 接口。
+- 实现 MockBridge 和 Bridge 合约测试框架。
+
+### P4：rig 非流式 Adapter
+
+- 首先支持 OpenAI/OpenAI-compatible。
+- 完成 Message、Tool 和响应转换。
+- 验证显式 `LLM -> ToolCall -> ToolResult -> LLM` 闭环。
+
+### P5：Streaming
+
+- 实现文本和 ToolCall 语义事件。
+- 完成参数重组、中断和取消测试。
+
+### P6：更多 Provider
+
+- Anthropic。
+- Ollama。
+- 完成统一合约测试和能力矩阵。
+
+## 14. 第一阶段验收标准
+
+第一阶段完成需要满足：
+
+1. 同一 `CompletionRequest`/`CompletionResponse` 协议可用于所有已支持 Provider。
+2. 配置可从 TOML/JSON 和 Rust Builder 生成同一个 Bridge 实例。
+3. 非流式和流式文本响应可用。
+4. Tool Definition 可以发送给模型。
+5. 单个和多个 ToolCall 可被完整解析。
+6. ToolCall 参数在流式分片下无损重组。
+7. ToolResult 可以作为后续请求消息发送给模型。
+8. 下游可以通过 ToolRegistry 执行 ToolCall。
+9. Bridge 不执行 Tool，Tool Executor 不调用 Bridge。
+10. Usage、finish reason、请求 ID 和错误类别被标准化。
+11. MockBridge 和所有真实 Adapter 通过共享合约测试。
+12. 除 `armillae-bridge-rig` 外没有 crate 依赖或暴露 rig 类型。
+
+## 15. 风险与应对
+
+### 15.1 rig API 变化
+
+风险：rig 处于 0.x，升级可能修改消息、Tool 或流式类型。
+
+应对：固定精确依赖版本；所有转换集中在独立 Adapter；通过合约测试驱动升级；禁止 rig 类型穿透公共 API。
+
+### 15.2 Provider 语义不完全一致
+
+风险：Role、ToolChoice、JSON Schema、finish reason 和流式事件在 Provider 间存在差异。
+
+应对：能力预检；明确的兼容/降级策略；保留 ProviderData 和扩展字段；禁止静默丢失。
+
+### 15.3 流式 ToolCall 重组错误
+
+风险：网络 chunk 不等于语义事件边界，Tool JSON 和 UTF-8 都可能跨 chunk。
+
+应对：Adapter 按 Provider 协议增量解析；按 call/index 维护独立缓冲；完成后再解析 JSON；使用随机分片和属性测试。
+
+### 15.4 抽象过度
+
+风险：在缺少真实 Provider 反馈前设计过多未来能力。
+
+应对：第一阶段只支持文本与 Tool Calling；不实现 Turn、Agent、Memory、RAG 和调度策略；多模态和插件机制在有明确需求后扩展。
+
+### 15.5 Secret 和敏感内容泄漏
+
+风险：Provider Client、Debug、错误或测试 fixture 可能包含认证和用户内容。
+
+应对：SecretRef 与已解析 Secret 分离；自定义脱敏 Debug；默认不记录正文；fixture 提交前扫描敏感字段。
+
+## 16. 后续演进
+
+Bridge 和 Tool Executor 稳定后，可以在不修改其核心协议的前提下新增：
+
+- `armillae-turn`：自动 Driver 与可逐步推进的 Turn 状态机；
+- 多 ToolCall 的串行、并行或 Executor-defined 调度；
+- 人工审批、权限与副作用策略；
+- MCP 或远程 ToolExecutor；
+- 录制与回放 Executor；
+- 多模态 Message Content；
+- Provider 路由、回退和负载均衡；
+- Conversation Memory 与叙事上下文；
+- 更高层 Agent 和世界运行时。
+
+未来 Turn 的组合关系应保持为：
+
+```text
+armillae-turn
+    ├── LlmBridge
+    └── ToolExecutor
+```
+
+而不是让 Bridge 依赖 Turn 或让 Tool Executor 持有 Bridge。
+
+## 17. 总结
+
+第一阶段的架构边界是：
+
+> LLM Bridge 负责一次 Provider 无关的模型调用和 Tool Calling 协议传输；Tool Executor 负责一次 ToolCall 的类型安全执行；是否继续调用模型由下游显式决定。
+
+这一边界既能满足当前 ToolCall 与内容输出需求，也为未来一次完整 Turn 的自动驱动留下稳定组合点。rig-rs 被用于降低 Provider 接入成本，但被严格隔离为可替换 Adapter，Armillae 自己掌握公共协议和长期兼容性。
+
+## 18. 调研参考
+
+- [rig-core crate 文档](https://docs.rs/rig-core/latest/rig_core/)
+- [Rig CompletionModel](https://docs.rs/rig-core/latest/rig_core/completion/request/trait.CompletionModel.html)
+- [Rig Completion 协议](https://docs.rs/rig-core/latest/rig_core/completion/index.html)
+- [Rig Streaming 协议](https://docs.rs/rig-core/latest/rig_core/streaming/index.html)
+- [Rig GitHub 仓库](https://github.com/0xPlaygrounds/rig)
+
+外部依赖的版本、能力和行为以实现 Spike 及锁定版本的源码为准，不能仅依赖本文链接所指向的 latest 文档。
+
