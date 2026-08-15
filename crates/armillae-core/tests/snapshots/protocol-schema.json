@@ -1,0 +1,796 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ProtocolSchema",
+  "type": "object",
+  "properties": {
+    "event": {
+      "$ref": "#/$defs/CompletionEvent"
+    },
+    "message": {
+      "$ref": "#/$defs/Message"
+    },
+    "request": {
+      "$ref": "#/$defs/CompletionRequest"
+    },
+    "response": {
+      "$ref": "#/$defs/CompletionResponse"
+    }
+  },
+  "required": [
+    "message",
+    "request",
+    "response",
+    "event"
+  ],
+  "$defs": {
+    "AssistantContent": {
+      "description": "An ordered item emitted by the assistant.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "text"
+            }
+          },
+          "$ref": "#/$defs/TextContent",
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "tool_call"
+            }
+          },
+          "$ref": "#/$defs/ToolCall",
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "provider_data"
+            }
+          },
+          "$ref": "#/$defs/ProviderData",
+          "required": [
+            "type"
+          ]
+        }
+      ]
+    },
+    "CompletionEvent": {
+      "description": "A semantic event in one streaming model response.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "model": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "type": "string",
+              "const": "response_started"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "index": {
+              "type": "integer",
+              "format": "uint",
+              "minimum": 0
+            },
+            "kind": {
+              "$ref": "#/$defs/ContentKind"
+            },
+            "type": {
+              "type": "string",
+              "const": "content_started"
+            }
+          },
+          "required": [
+            "type",
+            "index",
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "index": {
+              "type": "integer",
+              "format": "uint",
+              "minimum": 0
+            },
+            "text": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "text_delta"
+            }
+          },
+          "required": [
+            "type",
+            "index",
+            "text"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "index": {
+              "type": "integer",
+              "format": "uint",
+              "minimum": 0
+            },
+            "name": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "type": "string",
+              "const": "tool_call_started"
+            }
+          },
+          "required": [
+            "type",
+            "index",
+            "id"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "fragment": {
+              "type": "string"
+            },
+            "index": {
+              "type": "integer",
+              "format": "uint",
+              "minimum": 0
+            },
+            "type": {
+              "type": "string",
+              "const": "tool_call_arguments_delta"
+            }
+          },
+          "required": [
+            "type",
+            "index",
+            "fragment"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "call": {
+              "$ref": "#/$defs/ToolCall"
+            },
+            "index": {
+              "type": "integer",
+              "format": "uint",
+              "minimum": 0
+            },
+            "type": {
+              "type": "string",
+              "const": "tool_call_completed"
+            }
+          },
+          "required": [
+            "type",
+            "index",
+            "call"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "index": {
+              "type": "integer",
+              "format": "uint",
+              "minimum": 0
+            },
+            "type": {
+              "type": "string",
+              "const": "content_completed"
+            }
+          },
+          "required": [
+            "type",
+            "index"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "usage"
+            },
+            "usage": {
+              "$ref": "#/$defs/TokenUsage"
+            }
+          },
+          "required": [
+            "type",
+            "usage"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/ProviderData"
+            },
+            "type": {
+              "type": "string",
+              "const": "provider_event"
+            }
+          },
+          "required": [
+            "type",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "response": {
+              "$ref": "#/$defs/CompletionResponse"
+            },
+            "type": {
+              "type": "string",
+              "const": "response_completed"
+            }
+          },
+          "required": [
+            "type",
+            "response"
+          ]
+        }
+      ]
+    },
+    "CompletionRequest": {
+      "description": "A complete, single model-call request.",
+      "type": "object",
+      "properties": {
+        "extensions": {
+          "$ref": "#/$defs/ProviderExtensions"
+        },
+        "generation": {
+          "$ref": "#/$defs/GenerationOptions"
+        },
+        "messages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Message"
+          }
+        },
+        "output_format": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OutputFormat"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tool_choice": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ToolChoice"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ToolDefinition"
+          }
+        }
+      },
+      "required": [
+        "messages",
+        "tools",
+        "generation",
+        "extensions"
+      ]
+    },
+    "CompletionResponse": {
+      "description": "The normalized result of one model call.",
+      "type": "object",
+      "properties": {
+        "content": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AssistantContent"
+          }
+        },
+        "finish_reason": {
+          "$ref": "#/$defs/FinishReason"
+        },
+        "id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "provider_metadata": true,
+        "usage": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TokenUsage"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "content",
+        "finish_reason",
+        "provider_metadata"
+      ]
+    },
+    "ContentKind": {
+      "description": "The normalized kind of a streaming content block.",
+      "type": "string",
+      "enum": [
+        "text",
+        "tool_call",
+        "provider_data"
+      ]
+    },
+    "ContentPart": {
+      "description": "An ordered content item within a message.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "text"
+            }
+          },
+          "$ref": "#/$defs/TextContent",
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "tool_call"
+            }
+          },
+          "$ref": "#/$defs/ToolCall",
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "tool_result"
+            }
+          },
+          "$ref": "#/$defs/ToolResult",
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "provider_data"
+            }
+          },
+          "$ref": "#/$defs/ProviderData",
+          "required": [
+            "type"
+          ]
+        }
+      ]
+    },
+    "FinishReason": {
+      "description": "Why the Provider ended generation.",
+      "type": "string"
+    },
+    "GenerationOptions": {
+      "description": "Generation controls with cross-provider meaning.",
+      "type": "object",
+      "properties": {
+        "max_output_tokens": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "seed": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "stop": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "temperature": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        }
+      },
+      "required": [
+        "stop"
+      ]
+    },
+    "Message": {
+      "description": "A role-bearing message in model-call history.",
+      "type": "object",
+      "properties": {
+        "content": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ContentPart"
+          }
+        },
+        "role": {
+          "$ref": "#/$defs/Role"
+        }
+      },
+      "required": [
+        "role",
+        "content"
+      ]
+    },
+    "OutputFormat": {
+      "description": "A requested output representation.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "text"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "json_object"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "schema": true,
+            "strict": {
+              "type": "boolean"
+            },
+            "type": {
+              "type": "string",
+              "const": "json_schema"
+            }
+          },
+          "required": [
+            "type",
+            "name",
+            "schema",
+            "strict"
+          ]
+        }
+      ]
+    },
+    "ProviderData": {
+      "description": "Provider-specific data that has no normalized representation yet.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "value": true
+      },
+      "required": [
+        "provider",
+        "kind",
+        "value"
+      ]
+    },
+    "ProviderExtensions": {
+      "description": "Namespaced request values understood by a specific Adapter.",
+      "type": "object",
+      "properties": {
+        "values": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "values"
+      ]
+    },
+    "Role": {
+      "description": "The author or protocol role of a message.",
+      "type": "string",
+      "enum": [
+        "system",
+        "developer",
+        "user",
+        "assistant",
+        "tool"
+      ]
+    },
+    "TextContent": {
+      "description": "Plain text content.",
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ]
+    },
+    "TokenUsage": {
+      "description": "Normalized token accounting for a model response.",
+      "type": "object",
+      "properties": {
+        "cached_input_tokens": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "input_tokens": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "output_tokens": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "total_tokens": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        }
+      }
+    },
+    "ToolCall": {
+      "description": "A structured tool invocation requested by a model.",
+      "type": "object",
+      "properties": {
+        "arguments": true,
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "arguments"
+      ]
+    },
+    "ToolChoice": {
+      "description": "The model's permitted tool-selection behavior.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "auto"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "none"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "required"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "specific"
+            }
+          },
+          "required": [
+            "type",
+            "name"
+          ]
+        }
+      ]
+    },
+    "ToolDefinition": {
+      "description": "A tool made available to a model call.",
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "input_schema": true,
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "description",
+        "input_schema"
+      ]
+    },
+    "ToolResult": {
+      "description": "The result associated with one tool call.",
+      "type": "object",
+      "properties": {
+        "call_id": {
+          "type": "string"
+        },
+        "content": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ToolResultContent"
+          }
+        },
+        "is_error": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "call_id",
+        "content",
+        "is_error"
+      ]
+    },
+    "ToolResultContent": {
+      "description": "An ordered content item in a tool result.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "text"
+            }
+          },
+          "required": [
+            "type",
+            "text"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "json"
+            },
+            "value": true
+          },
+          "required": [
+            "type",
+            "value"
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -3,8 +3,8 @@
 > 技术事实来源为 [第一阶段技术设计](docs/DESIGN.md)。本清单只记录该设计与当前实现之间的
 > 差异；需求或技术方案变化时，先更新设计，再更新本清单。
 
-当前仓库仅包含设计文档，以下实现项均尚未完成。清单按设计中的依赖顺序组织：`P0` 在公共
-API 冻结前验证 rig 低层能力，`P1` 至 `P6` 逐步完成协议、执行器、Bridge、Adapter 和 Provider。
+当前 Workspace 与 P0 Spike 已完成，后续实现项按设计中的依赖顺序组织：`P1` 至 `P6`
+逐步完成协议、执行器、Bridge、Adapter 和 Provider。
 
 ## 总体边界
 
@@ -20,23 +20,22 @@ API 冻结前验证 rig 低层能力，`P1` 至 `P6` 逐步完成协议、执行
 
 ### 非流式能力
 
-- [ ] 锁定并记录 Spike 使用的精确 `rig-core` 版本。
-- [ ] 验证不使用 `rig::Agent`、`AgentBuilder` 或 `AgentRun`，只通过 `CompletionModel` 完成调用。
-- [ ] 验证能够发送 Tool Definition 并接收单个 ToolCall。
-- [ ] 验证能够接收多个 ToolCall，并保持 ID 与顺序。
-- [ ] 验证 Assistant ToolCall 与手工构造的 ToolResult 可以进入下一次消息历史。
-- [ ] 验证 OpenAI/OpenAI-compatible 与 Anthropic 的消息和 Tool 差异可由 Adapter 消化。
+- [x] 锁定并记录 Spike 使用的精确 `rig-core` 版本。
+- [x] 验证不使用 `rig::Agent`、`AgentBuilder` 或 `AgentRun`，只通过 `CompletionModel` 完成调用。
+- [x] 验证能够发送 Tool Definition 并接收单个 ToolCall。
+- [x] 验证能够接收多个 ToolCall，并保持 ID 与顺序。
+- [x] 验证 Assistant ToolCall 与手工构造的 ToolResult 可以进入下一次消息历史。
+- [x] 验证 OpenAI/OpenAI-compatible 与 Anthropic 的消息和 Tool 差异可由 Adapter 消化。
 
 ### Streaming 与结论
 
-- [ ] 验证文本增量可转换为 Provider 无关的语义事件。
-- [ ] 验证 ToolCall 名称和 JSON 参数跨任意 chunk 后能够无损重组。
-- [ ] 验证多个 ToolCall 的交错流式增量可以按稳定 index/call 独立重组。
-- [ ] 验证 drop 底层 Future/Stream 后请求会终止或尽快释放。
-- [ ] 记录 Spike 的 API、Provider 差异、已知限制和替代方案结论。
-- [ ] 若 rig 低层 API 无法满足设计，先更新 `docs/DESIGN.md`，再决定评估 `genai` 或原生
-      Provider Adapter。
-- [ ] Spike 通过并完成设计复核后，再冻结 Armillae 公共协议和 Bridge API。
+- [x] 验证文本增量可转换为 Provider 无关的语义事件。
+- [x] 验证 ToolCall 名称和 JSON 参数跨任意 chunk 后能够无损重组。
+- [x] 验证多个 ToolCall 的交错流式增量可以按稳定 index/call 独立重组。
+- [x] 验证 drop 底层 Future/Stream 后请求会终止或尽快释放。
+- [x] 记录 Spike 的 API、Provider 差异、已知限制和替代方案结论。
+- [x] 确认 rig 低层 API 满足设计，当前无需评估 `genai` 或原生 Provider Adapter。
+- [x] Spike 通过并完成设计复核，允许进入 Armillae 公共协议和 Bridge API 的实现与冻结。
 
 ## P1：Workspace 与 `armillae-core`
 
@@ -53,34 +52,34 @@ API 冻结前验证 rig 低层能力，`P1` 至 `P6` 逐步完成协议、执行
 
 ### Message 与 Tool 协议
 
-- [ ] 实现 `Message`、`Role`、`ContentPart` 和 `TextContent`。
-- [ ] 实现 `ToolDefinition`、`ToolCall`、`ToolResult`、`ToolResultContent` 和 `ToolChoice`。
-- [ ] 支持单个 Assistant Message 中交错出现文本和多个 ToolCall。
-- [ ] 保持 `ContentPart`、多个 ToolCall 和 ToolResult 的原始顺序与调用 ID。
-- [ ] 为预期扩展的公共枚举使用适当的 `#[non_exhaustive]` 兼容策略。
+- [x] 实现 `Message`、`Role`、`ContentPart` 和 `TextContent`。
+- [x] 实现 `ToolDefinition`、`ToolCall`、`ToolResult`、`ToolResultContent` 和 `ToolChoice`。
+- [x] 支持单个 Assistant Message 中交错出现文本和多个 ToolCall。
+- [x] 保持 `ContentPart`、多个 ToolCall 和 ToolResult 的原始顺序与调用 ID。
+- [x] 为预期扩展的公共枚举使用适当的 `#[non_exhaustive]` 兼容策略。
 
 ### Completion 协议
 
-- [ ] 实现 `CompletionRequest`、`GenerationOptions` 和 `ProviderExtensions`。
+- [x] 实现 `CompletionRequest`、`OutputFormat`、`GenerationOptions` 和 `ProviderExtensions`。
 - [ ] 使用命名空间隔离 Provider 扩展，并默认拒绝未知扩展。
-- [ ] 实现 `CompletionResponse`、`AssistantContent`、`FinishReason` 和 `TokenUsage`。
-- [ ] 实现 `ProviderData`，并禁止用它绕过已有标准字段。
-- [ ] 支持未知 finish reason 和 ProviderData 的前向兼容。
+- [x] 实现 `CompletionResponse`、`AssistantContent`、`FinishReason` 和 `TokenUsage`。
+- [ ] 在 Adapter 转换中确保 `ProviderData` 不被用于绕过已有标准字段。
+- [x] 支持未知 finish reason 和 ProviderData 的前向兼容。
 
 ### Streaming 协议
 
-- [ ] 实现 `CompletionEvent` 和 `ContentKind`。
-- [ ] 定义并验证稳定 content index、started/completed 配对和事件顺序。
-- [ ] 只在完整 JSON 组装成功后发出 `ToolCallCompleted`。
+- [x] 实现 `CompletionEvent` 和 `ContentKind`。
+- [x] 定义并验证稳定 content index、started/completed 配对和事件顺序。
+- [x] 通过 `ToolCall.arguments: Value` 保证 `ToolCallCompleted` 只携带完整 JSON。
 - [ ] 保证成功流只产生一个 `ResponseCompleted`。
 - [ ] 保证中断流不构造虚假的完整响应。
 
 ### Core 测试
 
-- [ ] 覆盖所有公共协议类型的 Serde round-trip。
-- [ ] 覆盖文本与 ToolCall 混合、多 ToolCall 顺序和 ToolCall/ToolResult ID 关联。
-- [ ] 覆盖未知 finish reason、ProviderData 和公共枚举的前向兼容。
-- [ ] 生成并验证 JSON Schema 的合法性与稳定快照。
+- [x] 覆盖所有公共协议类型的 Serde round-trip。
+- [x] 覆盖文本与 ToolCall 混合、多 ToolCall 顺序和 ToolCall/ToolResult ID 关联。
+- [x] 覆盖未知 finish reason、ProviderData 和公共枚举的前向兼容。
+- [x] 生成并验证 JSON Schema 的合法性与稳定快照。
 
 ## P2：`armillae-tools`
 

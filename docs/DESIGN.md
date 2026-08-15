@@ -287,6 +287,13 @@ Cargo `version.workspace = true`，不得用于维护当前配置。
 
 公共协议类型默认派生 `Clone`、`Debug`、`Serialize` 和 `Deserialize`。预期继续增加变体的公共枚举应标记 `#[non_exhaustive]`，避免新增 Provider 能力时迫使下游进行同步升级。配置通过显式 `api_version` 管理文件格式演进。
 
+公共 JSON 协议使用稳定、可读的 wire format：Role 和 `FinishReason` 使用 `snake_case`
+字符串；包含数据的内容枚举使用 `type` 字段判别的对象，例如
+`{ "type": "text", "text": "..." }`。`FinishReason` 的未知字符串必须反序列化为
+`Unknown(String)`，再序列化时恢复原值。类型名、Rust 默认的 externally tagged enum 表示和
+调试字符串都不属于 wire contract。所有公共协议根类型生成 JSON Schema，并通过提交到仓库
+的快照约束意外变化。
+
 ### 6.1 Message
 
 消息必须能够无损表达 Tool Calling 历史。第一阶段的最小模型如下：
@@ -381,6 +388,18 @@ pub struct CompletionRequest {
     pub output_format: Option<OutputFormat>,
     pub generation: GenerationOptions,
     pub extensions: ProviderExtensions,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum OutputFormat {
+    Text,
+    JsonObject,
+    JsonSchema {
+        name: String,
+        schema: serde_json::Value,
+        strict: bool,
+    },
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -1106,6 +1125,25 @@ let final_response = bridge
 - OpenAI 和 Anthropic 的差异可以被 Adapter 层消化。
 
 Spike 代码可以是临时实验，不作为公共 API。若低层 API 无法满足上述要求，应在此阶段评估 `genai` 或原生 Provider Adapter。
+
+#### P0 结论（2026-08-15）
+
+Spike 使用精确版本 `rig-core = 0.41.0`，结论为通过。离线测试确认可以只调用
+`CompletionModel` 完成非流式和流式请求，无需引入 Rig Agent runtime；Tool Definition、单个及
+多个 ToolCall、Assistant ToolCall 与 ToolResult 历史、OpenAI 与 Anthropic 原生消息差异均可
+在 Adapter 边界处理。OpenAI 流式路径能够跨任意 HTTP 字节与 UTF-8 边界重组交错的多个
+ToolCall，并保留调用 ID、稳定的内部关联 ID、输出顺序和 Usage。
+
+因此第一阶段继续采用 `rig-core 0.41.0` 实现 `armillae-llm-rig`，暂不转向 `genai` 或原生
+Provider Adapter。Armillae 仍拥有公共协议；Spike 中使用的 Rig 类型、原始响应和内部关联 ID
+都不得穿透 Adapter。依赖继续精确锁定，任何版本升级都必须先复跑转换与 Bridge 合约测试。
+
+已知边界是：Rig 只保证客户端 Future/Stream 被 drop 后释放或取消其内部资源，无法保证远端
+Provider 已经停止计算；OpenAI 的后续 ToolCall delta 可能不重复外部调用 ID，需要按稳定的
+内部关联 ID 分组；Anthropic 使用 `tool_use`/`tool_result` content block，且请求要求
+`max_tokens`。这些差异由后续 Armillae 协议、取消语义和 Provider Adapter 显式吸收，不改变
+Bridge 一次只执行一个 Model Call 的边界。完整测试证据和限制记录见
+[rig-core 0.41.0 P0 Spike](spikes/rig-core-0.41.0.md)。
 
 ### P1：`armillae-core`
 
