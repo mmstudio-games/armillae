@@ -843,6 +843,33 @@ let bridge = MockBridge::scripted([
 ]);
 ```
 
+Mock 相关实现由 `armillae-llm` 的 `mock` feature 提供，默认构建不携带测试辅助设施。下游
+测试和 `armillae-llm-rig` 的 dev-dependency 可以显式启用该 feature；feature 内同时提供可由
+Mock 和真实 Adapter 复用的 Bridge 合约测试工具。
+
+共享工具位于 `armillae_llm::mock::contract`，提供运行时无关的异步 `verify_completion`、
+`verify_stream`，以及同步 `validate_stream_events`。它们验证期望响应、唯一且位于末尾的
+`ResponseCompleted`、内容 index 生命周期、文本增量和 ToolCall 参数重组；失败返回不携带
+请求或响应正文的 `BridgeContractError`，由调用方自己的测试运行时驱动。
+
+```rust
+pub enum MockResponse {
+    Completion(CompletionResponse),
+    Stream(Vec<Result<CompletionEvent, BridgeError>>),
+    Error(BridgeError),
+}
+```
+
+`MockBridge::fixed` 在每次调用中重复返回同一个脚本项；`MockBridge::scripted` 按 Future 被
+poll 的顺序从一个共享队列消费脚本项。`Completion` 只用于 `complete`，`Stream` 只用于
+`stream`，调用类型与脚本项不匹配或队列耗尽时返回 `InvalidRequest`，不得猜测或自动转换。
+能力预检失败不消费脚本项。
+
+`MockResponse::text`、`tool_call`、`text_stream` 和 `tool_call_stream` 提供语义完整的便利构造；
+流式便利构造必须生成稳定 index，并以唯一 `ResponseCompleted` 结束。原始 `stream` 构造允许
+测试显式注入任意事件或 `StreamInterrupted`。Mock 记录所有收到的请求，包括被本地能力预检
+拒绝的请求；请求正文和脚本内容不得出现在默认 `Debug` 输出中。
+
 Mock 至少支持：
 
 - 固定非流式响应；

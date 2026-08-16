@@ -3,6 +3,9 @@ name = "armillae-llm"
 version.workspace = true
 edition.workspace = true
 
+[features]
+mock = []
+
 [dependencies]
 armillae-core = { version = "0.1.0", path = "../armillae-core" }
 futures-util = "0.3"

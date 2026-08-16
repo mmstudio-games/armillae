@@ -151,11 +151,12 @@
 
 ### MockBridge 与共享合约
 
-- [ ] 实现固定非流式响应和按调用顺序返回的脚本响应。
-- [ ] 实现文本流式增量和 ToolCall 参数分片。
-- [ ] 支持注入 Provider 错误和流中断。
-- [ ] 记录收到的请求，供下游测试断言。
-- [ ] 建立可由 Mock 和真实 Adapter 复用的 Bridge 合约测试框架。
+- [x] 通过 `mock` feature 提供 Mock 和共享 Bridge 测试设施，默认构建不启用。
+- [x] 实现固定非流式响应和按调用顺序返回的脚本响应。
+- [x] 实现文本流式增量和 ToolCall 参数分片。
+- [x] 支持注入 Provider 错误和流中断。
+- [x] 记录收到的请求，供下游测试断言。
+- [x] 建立可由 Mock 和真实 Adapter 复用的 Bridge 合约测试框架。
 
 ## P4：`armillae-llm-rig` 非流式 Adapter
 
