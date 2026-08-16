@@ -258,7 +258,7 @@ crates/armillae-rag/              # 组合检索、重排、上下文组装与 L
 |---|---|
 | `armillae-core` | `serde`、`serde_json`、`schemars`、`thiserror` |
 | `armillae-llm` | `armillae-core`、`futures-core`/`futures-util`、`serde`、`serde_json`、`toml`、`url`、`secrecy` |
-| `armillae-tools` | `armillae-core`、`futures-util`、`schemars`、`serde` |
+| `armillae-tools` | `armillae-core`、`futures-util`、`schemars`、`serde`、`serde_json`、`thiserror` |
 | `armillae-llm-rig` | `armillae-core`、`armillae-llm`、`rig-core`、`tokio` |
 
 公共 Bridge 和 Tool 接口只暴露标准 `Future`/`Stream` 语义，不把 Tokio 类型放入协议层。首个 rig Adapter 可以使用 Tokio 作为执行环境。rig 依赖以 Spike 验证过的精确版本锁定；本设计调研基线为 `rig-core = 0.41.0`。
@@ -777,7 +777,7 @@ Mock 至少支持：
 ```rust
 pub trait Tool: Send + Sync {
     type Args: DeserializeOwned + JsonSchema + Send;
-    type Output: Serialize + Send;
+    type Output: IntoToolOutput + Send;
     type Error: std::error::Error + Send + Sync + 'static;
 
     const NAME: &'static str;
@@ -799,6 +799,20 @@ pub trait Tool: Send + Sync {
 - 从 `Args` 自动生成 JSON Schema；
 - 统一错误映射。
 
+`IntoToolOutput` 负责把 Tool 作者的返回值转换为规范化输出：
+
+```rust
+pub trait IntoToolOutput {
+    fn into_tool_output(self) -> Result<ToolOutput, ToolExecutionError>;
+}
+```
+
+所有满足 `Serialize` 的普通返回类型通过 blanket implementation 转换为单个
+`ToolResultContent::Json`。`ToolOutput` 本身不实现 `Serialize`，而是直接实现
+`IntoToolOutput` 并原样返回，因此两种实现不会重叠，也不依赖 nightly specialization。
+Tool 作者默认返回自己的类型；只有需要显式文本、多段内容或其他模型可见内容语义时才直接
+返回 `ToolOutput`。
+
 ### 8.2 类型擦除 DynTool
 
 由于 `Tool` 包含关联类型，Registry 内部需要 object-safe 接口：
@@ -818,13 +832,17 @@ pub trait DynTool: Send + Sync {
 `DynTool` 的规范化成功结果为：
 
 ```rust
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct ToolOutput {
     pub content: Vec<ToolResultContent>,
 }
 ```
 
 blanket implementation 默认将类型化 `Tool::Output` 序列化为 `ToolResultContent::Json`。需要返回多段文本或定制内容的 Tool 可以显式返回 `ToolOutput`，或直接实现 `DynTool`。
+
+`ToolOutput` 的 `Debug` 实现只能显示内容数量和类型，不得显示文本或 JSON 正文；它不是配置
+或 transcript 类型，也不得派生或实现 `Serialize`，以保持普通数据转换与规范化输出之间的
+明确边界。
 
 为所有满足约束的 `Tool` 提供 blanket implementation。通常只有需要完全动态 Schema 或远程代理的高级用户才直接实现 `DynTool`。
 
@@ -906,6 +924,16 @@ pub enum ToolExecutionError {
 
     #[error("tool output serialization failed: {message}")]
     OutputSerialization { message: String },
+}
+```
+
+重复注册属于 Registry 构建或变更失败，不属于一次 Tool 执行失败，使用独立的结构化错误：
+
+```rust
+#[derive(Debug, thiserror::Error)]
+pub enum ToolRegistryError {
+    #[error("duplicate tool: {name}")]
+    DuplicateTool { name: String },
 }
 ```
 

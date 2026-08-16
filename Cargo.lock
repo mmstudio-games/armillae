@@ -36,6 +36,12 @@ name = "armillae-tools"
 version = "0.1.0"
 dependencies = [
  "armillae-core",
+ "futures-executor",
+ "futures-util",
+ "schemars",
+ "serde",
+ "serde_json",
+ "thiserror",
 ]
 
 [[package]]

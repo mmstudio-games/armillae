@@ -85,32 +85,34 @@
 
 ### 类型化 Tool 与类型擦除
 
-- [ ] 实现包含 `Args`、`Output`、`Error` 和 `NAME` 的类型化 `Tool` trait。
-- [ ] 从 `Tool::Args` 自动生成输入 JSON Schema。
-- [ ] 实现 object-safe `DynTool` 和 `call_json`。
-- [ ] 为满足约束的类型化 Tool 提供 `DynTool` blanket implementation。
-- [ ] 实现规范化 `ToolOutput`，支持默认 JSON 输出和显式多段内容。
+- [x] 实现包含 `Args`、`Output`、`Error` 和 `NAME` 的类型化 `Tool` trait。
+- [x] 实现 `IntoToolOutput`，为普通 `Serialize` 输出提供 JSON blanket conversion，并让
+      `ToolOutput` 保持显式多段内容。
+- [x] 从 `Tool::Args` 自动生成输入 JSON Schema。
+- [x] 实现 object-safe `DynTool` 和 `call_json`。
+- [x] 为满足约束的类型化 Tool 提供 `DynTool` blanket implementation。
+- [x] 实现规范化 `ToolOutput`，支持默认 JSON 输出和显式多段内容。
 
 ### Context、Registry 与 Executor
 
-- [ ] 实现基于类型安全 extensions type map 的轻量 `ToolContext`。
-- [ ] 实现 `ToolExecutor::definitions` 和单个 `ToolCall` 的 `execute`。
-- [ ] 实现动态注册、注销和查找的 `ToolRegistry`。
-- [ ] 对 Tool Definition 使用稳定排序。
-- [ ] 重复注册同名 Tool 时返回构建错误，不静默覆盖。
-- [ ] 解析并验证 ToolCall JSON 参数，保持输出 `call_id` 与输入 ID 一致。
-- [ ] 实现 `UnknownTool`、`InvalidArguments`、`ExecutionFailed` 和
+- [x] 实现基于类型安全 extensions type map 的轻量 `ToolContext`。
+- [x] 实现 `ToolExecutor::definitions` 和单个 `ToolCall` 的 `execute`。
+- [x] 实现动态注册、注销和查找的 `ToolRegistry`。
+- [x] 对 Tool Definition 使用稳定排序。
+- [x] 重复注册同名 Tool 时返回结构化 `ToolRegistryError`，不静默覆盖。
+- [x] 解析并验证 ToolCall JSON 参数，保持输出 `call_id` 与输入 ID 一致。
+- [x] 实现 `UnknownTool`、`InvalidArguments`、`ExecutionFailed` 和
       `OutputSerialization` 错误分类。
-- [ ] 保持宿主执行错误与模型可见的 `ToolResult { is_error: true }` 相互独立。
-- [ ] 不在 Executor 中引入重试、Bridge 调用、并发调度或审批策略。
+- [x] 保持宿主执行错误与模型可见的 `ToolResult { is_error: true }` 相互独立。
+- [x] 不在 Executor 中引入重试、Bridge 调用、并发调度或审批策略。
 
 ### Tool 测试
 
-- [ ] 覆盖 Tool Definition 和 Schema 自动生成。
-- [ ] 覆盖正确执行、缺少字段、错误类型和非法 JSON 值。
-- [ ] 覆盖未知 Tool、Tool 自身错误和输出序列化失败。
-- [ ] 覆盖重复注册、稳定定义排序和注销行为。
-- [ ] 覆盖 `ToolContext` extensions 透传和 ToolCall ID 保持。
+- [x] 覆盖 Tool Definition 和 Schema 自动生成。
+- [x] 覆盖正确执行、缺少字段、错误类型和非法 JSON 值。
+- [x] 覆盖未知 Tool、Tool 自身错误和输出序列化失败。
+- [x] 覆盖重复注册、稳定定义排序和注销行为。
+- [x] 覆盖 `ToolContext` extensions 透传和 ToolCall ID 保持。
 
 ## P3：`armillae-llm` 与 Mock
 
