@@ -118,31 +118,35 @@
 
 ### Bridge 接口与能力
 
-- [ ] 实现 object-safe `LlmBridge::complete` 和 `LlmBridge::stream`。
-- [ ] 使用标准 Future/Stream 语义，不在公共接口暴露 Tokio 类型。
-- [ ] 实现 `BridgeCapabilities`。
-- [ ] 在请求发送前验证 Streaming、Tool Calling、ToolChoice、Structured Output 和 Role 能力。
-- [ ] 能力配置覆盖只允许收紧底层能力，默认不得虚构 Provider 能力。
+- [x] 实现 object-safe `LlmBridge::complete` 和 `LlmBridge::stream`。
+- [x] 使用标准 Future/Stream 语义，不在公共接口暴露 Tokio 类型。
+- [x] 实现细分 ToolChoice 与 OutputFormat 支持的 `BridgeCapabilities`。
+- [x] 在请求发送前验证 Streaming、Tool Calling、ToolChoice、Structured Output 和 Role 能力。
+- [ ] 能力由 Provider/模型基线和 Adapter 验证结果决定，不提供可序列化覆盖，也不得虚构
+      Provider 能力。
 - [ ] 不支持的能力必须明确报错，不伪造流或静默降级。
 
 ### 错误与取消
 
-- [ ] 实现设计中定义的完整 `BridgeError` 分类和 `ErrorMetadata`。
-- [ ] 保留 Provider、HTTP 状态码、请求 ID、retryable 和 retry-after 等可判断事实。
+- [x] 实现设计中定义的完整 `BridgeError` 分类和 `ErrorMetadata`。
+- [x] 保留 Provider、HTTP 状态码、请求 ID、retryable 和 retry-after 等可判断事实。
 - [ ] 对 Future/Stream drop 定义并实现取消语义。
 - [ ] 将完成前的流失败映射为 `StreamInterrupted`。
 - [ ] 确保错误 Display、Debug 和 tracing 不包含 Secret 或完整敏感响应。
 
 ### 配置、Secret 与 Factory
 
-- [ ] 实现版本化 `BridgeConfig`、`TransportConfig`、`CredentialRef` 和
+- [x] 实现版本化 `BridgeConfig`、`TransportConfig`、`CredentialRef` 和
       `ResolvedBridgeConfig`。
-- [ ] 支持 TOML、JSON 和 Rust Builder 生成同一个配置模型。
-- [ ] 实现 Environment、File 和宿主 Resolver 三种 Secret 解析路径。
-- [ ] 确保 Secret 值不进入可序列化配置、Debug 或 tracing。
+- [x] 支持 TOML、JSON 和 Rust Builder 生成同一个配置模型。
+- [x] 实现 Environment、File 和宿主 Resolver 三种 Secret 解析路径。
+- [x] Secret Resolver 保持 object-safe 和运行时无关；File Secret 只移除一个结尾换行。
+- [x] 确保 Secret 值不进入可序列化配置、Debug 或 tracing。
 - [ ] 在构造阶段校验配置版本、Provider、model、transport 和 `provider_options`。
-- [ ] 校验自定义 endpoint 的 URL，并允许宿主限制 scheme、host 或网络范围。
-- [ ] 实现 object-safe `BridgeFactory`，第一阶段直接提供 `RigBridgeFactory`。
+- [x] 默认允许通过通用 URL 校验的自定义 endpoint，并允许宿主选择性限制 scheme、host 或
+      网络范围。
+- [x] 实现 object-safe `BridgeFactory`。
+- [ ] 在 `armillae-llm-rig` 中直接提供第一阶段的 `RigBridgeFactory`。
 - [ ] 不提前实现动态 Adapter 插件 Registry。
 
 ### MockBridge 与共享合约

@@ -520,9 +520,24 @@ pub struct BridgeCapabilities {
     pub streaming: bool,
     pub tool_calling: bool,
     pub parallel_tool_calls: bool,
-    pub structured_output: bool,
+    pub tool_choice: ToolChoiceCapabilities,
+    pub output_format: OutputFormatCapabilities,
     pub system_message: bool,
     pub developer_message: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct ToolChoiceCapabilities {
+    pub auto: bool,
+    pub none: bool,
+    pub required: bool,
+    pub specific: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct OutputFormatCapabilities {
+    pub json_object: bool,
+    pub json_schema: bool,
 }
 ```
 
@@ -533,7 +548,19 @@ Bridge 在发送请求前必须验证能力：
 - Provider 不支持 Developer role：按配置的兼容策略转换，或明确拒绝。
 - 不支持 Streaming：`stream` 直接返回能力错误，而不是伪造流。
 
-能力信息可以来自 Provider 类型、静态能力表或配置覆盖。配置覆盖只能收紧能力，默认不能声称底层实际不具备的能力。
+`tool_choice` 存在时请求必须同时提供至少一个 Tool Definition；`Specific { name }` 指定的
+名称必须出现在本次请求的 Tool Definition 中，否则属于 `InvalidRequest`，不能交给 Provider
+猜测或修正。
+
+Text 是所有 Bridge 的基础输出能力。`ToolChoiceCapabilities` 分别表达四种 ToolChoice，
+`OutputFormatCapabilities` 分别表达 JSON Object 与 JSON Schema，不能用一个总开关掩盖
+Provider 的部分支持。`tool_calling = false` 时所有 ToolChoice 能力必须为 false；请求使用的
+具体变体不受支持时必须在本地拒绝。
+
+第一阶段的能力信息来自 Provider 类型、模型能力表和 Adapter 验证结果，不在可序列化
+`BridgeConfig` 中提供能力覆盖。Adapter 不得声称底层实际不具备的能力；宿主若需要主动关闭
+已支持能力，可以在 Bridge 外层实施策略。只有出现稳定的跨宿主需求后，才设计纯收紧的能力
+限制配置。
 
 ### 7.3 流式事件
 
@@ -659,7 +686,19 @@ pub enum BridgeError {
 }
 ```
 
-`ErrorMetadata` 至少包含 Provider、HTTP 状态码和请求 ID。错误日志和 Display 不得包含 API Key、Authorization header 或完整敏感响应。
+`ErrorMetadata` 只保存跨 Provider 可安全判断的事实：
+
+```rust
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ErrorMetadata {
+    pub provider: String,
+    pub http_status: Option<u16>,
+    pub request_id: Option<String>,
+}
+```
+
+Provider 原始响应、header 和正文不得放入该结构。错误日志和 Display 不得包含 API Key、
+Authorization header 或完整敏感响应。
 
 Bridge 只提供 `retryable`、`retry_after` 等事实，不决定是否重新执行推理请求。自动重试策略属于未来 Turn 或下游调度器。
 
@@ -679,6 +718,12 @@ pub struct BridgeConfig {
     pub provider_options: serde_json::Value,
 }
 
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub struct TransportConfig {
+    pub connect_timeout_ms: u64,
+    pub request_timeout_ms: u64,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum CredentialRef {
@@ -687,6 +732,16 @@ pub enum CredentialRef {
     Resolver { key: String },
 }
 ```
+
+`TransportConfig` 只控制网络传输，不承载模型生成参数或重试策略。第一阶段默认连接超时为
+5 秒、请求超时为 60 秒，两者必须大于零；不设置跨 Provider 的任意最大值。自动重试不属于
+Transport，仍由下游根据 `BridgeError` 中的事实决定。
+
+`BridgeConfig` 的 `api_version` 必须等于 `armillae.llm/v1alpha1`，`driver`、`provider` 和
+`model` 必须非空，`provider_options` 必须是 JSON Object。通用层只验证跨 Provider 的结构；
+具体字段、类型和未知字段由 Adapter Factory 在构造阶段严格验证。生成默认值在通用层拒绝
+非有限或负数 temperature、零 `max_output_tokens` 和空 stop string；Provider 特有的范围继续
+由 Adapter 验证。
 
 示例 TOML：
 
@@ -728,11 +783,38 @@ TOML / JSON / Rust Builder
    Arc<dyn LlmBridge>
 ```
 
+Secret 解析使用不绑定异步运行时的 object-safe 接口：
+
+```rust
+pub trait SecretResolver: Send + Sync {
+    fn resolve<'a>(
+        &'a self,
+        key: &'a str,
+    ) -> BoxFuture<'a, Result<SecretString, BridgeError>>;
+}
+
+pub struct ResolvedBridgeConfig {
+    config: BridgeConfig,
+    credential: Option<SecretString>,
+}
+```
+
+Environment 和 File 由 `armillae-llm` 在构造阶段解析，Resolver variant 委托宿主提供的
+`SecretResolver`。File Secret 必须是 UTF-8；只移除文件末尾的一个 `\n` 或 `\r\n`，不得使用
+`trim()` 改变 Secret 的其他空白。解析后的 Secret 不可序列化，`Debug` 必须脱敏；空 Secret
+统一视为无效配置。
+
+自定义 endpoint 默认允许，不要求额外授权策略。通用校验要求 URL 使用 HTTP 或 HTTPS、
+包含 host 且不携带 userinfo；Adapter 继续验证自身的路径或协议要求。宿主处理不可信或
+多租户配置时，可以额外传入 object-safe `EndpointPolicy`，按 scheme、host、解析后的网络
+范围或自己的信任规则收紧；没有策略时不会因为 endpoint 是自定义地址而拒绝。
+
 安全约束：
 
 - Secret 值不进入可序列化配置。
 - Debug 和 tracing 输出必须脱敏。
-- 自定义 endpoint 必须通过 URL 校验；宿主可配置允许的 scheme、host 或网络范围，避免动态配置导致 SSRF。
+- 自定义 endpoint 必须通过通用 URL 校验；默认允许合法地址，宿主可按不可信配置的来源
+  选择性限制 scheme、host 或网络范围，避免动态配置导致 SSRF。
 - `provider_options` 必须在构造阶段校验类型和已知字段。
 
 ### 7.6 Factory
