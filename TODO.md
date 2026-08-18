@@ -49,6 +49,12 @@
 - [x] 建立统一的格式检查、Clippy、单元测试和文档构建基线。
 - [x] 使用 Semifold 0.3.0 初始化 Rust workspace 版本管理，并将四个 crate 配置为 `alpha`
       发布通道。
+- [x] 添加可由 Pull Request 和 Semifold CD 复用的 Rust CI，覆盖格式、check、全部离线测试、
+      严格 Clippy 和文档构建。
+- [x] 按 Semifold 0.3.0 Jinja 模板生成 PR status 与 `main` version/publish workflow，并保持
+      step output、权限和 Rust registry token 契约。
+- [x] Semifold CD 必须在同一提交的 Rust CI 通过后运行，且标准 CI 不执行 ignored Live
+      Provider 测试或注入 Provider 凭证。
 
 ### Message 与 Tool 协议
 

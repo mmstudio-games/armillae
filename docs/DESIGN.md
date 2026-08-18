@@ -280,8 +280,27 @@ Cargo `version.workspace = true`，不得用于维护当前配置。
 - 四个 crate 均使用 `alpha` 发布通道，首次进入通道时保留当前稳定版本基准，不额外执行
   patch、minor 或 major 提升；
 - 使用 Semifold 默认 changelog 标签；
-- 初始化阶段不生成 GitHub Actions，CI 发布流程在得到单独设计和授权后再增加；
+- GitHub Actions 使用手工渲染自 Semifold 0.3.0 内置 Jinja 模板的
+  `semifold-ci.yaml` 和 `semifold-status.yaml`，模板变量固定为 base branch `main`、Rust
+  resolver；Semifold step ID、job output、权限和 registry token 契约保持与上游模板一致；
 - 配置发布通道不等于授权执行版本提升或向 registry 发布。
+
+仓库同时提供一个可复用的 Rust CI workflow。Pull Request 直接调用该 workflow；`main` 的
+Semifold CD workflow 必须先复用并通过同一质量门禁，再运行 `semifold ci`，避免未验证提交进入
+版本提升或发布路径。质量门禁固定执行：
+
+- `cargo fmt --all -- --check`；
+- `cargo check --workspace --all-targets --all-features --locked`；
+- `cargo test --workspace --all-targets --all-features --locked`；
+- `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`；
+- 在 `RUSTDOCFLAGS=-D warnings` 下执行
+  `cargo doc --workspace --all-features --no-deps --locked`。
+
+CI 使用 stable Rust，并安装 `rustfmt` 和 `clippy`；Cargo 构建缓存不得包含 Secret。标准 CI 只
+运行完全离线的单元测试、协议测试、Schema 快照、Mock HTTP 和共享合约测试，不运行 ignored
+Live Provider 测试，也不向 workflow 注入 Provider API Key。Semifold PR status workflow 只读取
+发布计划并维护 PR 状态评论；CD 仅使用 GitHub Token、OIDC 权限和仓库配置的
+`CARGO_REGISTRY_TOKEN`，不得把 token 输出到日志。
 
 ## 6. `armillae-core`：共享协议
 
