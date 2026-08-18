@@ -142,12 +142,12 @@
 - [x] 实现 Environment、File 和宿主 Resolver 三种 Secret 解析路径。
 - [x] Secret Resolver 保持 object-safe 和运行时无关；File Secret 只移除一个结尾换行。
 - [x] 确保 Secret 值不进入可序列化配置、Debug 或 tracing。
-- [ ] 在构造阶段校验配置版本、Provider、model、transport 和 `provider_options`。
+- [x] 在构造阶段校验配置版本、Provider、model、transport 和 `provider_options`。
 - [x] 默认允许通过通用 URL 校验的自定义 endpoint，并允许宿主选择性限制 scheme、host 或
       网络范围。
 - [x] 实现 object-safe `BridgeFactory`。
-- [ ] 在 `armillae-llm-rig` 中直接提供第一阶段的 `RigBridgeFactory`。
-- [ ] 不提前实现动态 Adapter 插件 Registry。
+- [x] 在 `armillae-llm-rig` 中直接提供第一阶段的 `RigBridgeFactory`。
+- [x] 不提前实现动态 Adapter 插件 Registry。
 
 ### MockBridge 与共享合约
 
@@ -162,24 +162,42 @@
 
 ### 隔离与转换
 
-- [ ] 使用泛型 `RigBridge<M>` 适配 `CompletionModel`，对外擦除为 `Arc<dyn LlmBridge>`。
-- [ ] 将所有 Armillae/Rig 转换集中在独立 `convert` 模块。
-- [ ] 转换 Message、Tool Definition、Completion Request、Completion Response 和错误。
-- [ ] 保持 ToolCall ID、多个 ToolCall 的顺序和 ToolResult 关联。
-- [ ] 将未知 Provider 输出转换为 `ProviderData`，不静默丢失。
-- [ ] 只将脱敏、受控的 Provider metadata 暴露到公共响应和错误。
-- [ ] 禁止依赖 Rig Agent 的 Tool 注册、执行、Memory、RAG 或 Hook 路径。
+- [x] 使用泛型 `RigBridge<M>` 适配 `CompletionModel`，对外擦除为 `Arc<dyn LlmBridge>`。
+- [x] 为 `RigBridge<M>` 注入私有 Provider Request Mapper，将标准请求字段和当前 Provider 的
+      命名空间扩展显式映射到 rig 请求，不在通用转换中硬编码 Provider wire shape。
+- [x] 为 `RigBridge<M>` 注入私有 Provider Response Normalizer，从 raw response 标准化
+      finish reason、实际模型、ID 和安全 metadata，不依赖内容猜测。
+- [x] 按设计合并构造期生成默认值与单次请求参数，并覆盖未指定/覆盖/stop 空列表语义。
+- [x] 将所有 Armillae/Rig 转换集中在独立 `convert` 模块。
+- [x] 转换 Message、Tool Definition、Completion Request、Completion Response 和错误。
+- [x] 保持 ToolCall ID、多个 ToolCall 的顺序和 ToolResult 关联。
+- [x] 为 `ToolResult.is_error` 实现 Provider 显式兼容策略：原生支持时映射，不支持时按设计
+      保留 Armillae 语义且不得拒绝请求或改写模型可见内容。
+- [x] 将未知 Provider 输出转换为 `ProviderData`，不静默丢失。
+- [x] 请求扩展只读取当前 Provider/Adapter 命名空间，拒绝未知字段、错误类型及对标准字段的
+      重复设置或覆盖。
+- [x] 只将脱敏、受控的 Provider metadata 暴露到公共响应和错误。
+- [x] 禁止依赖 Rig Agent 的 Tool 注册、执行、Memory、RAG 或 Hook 路径。
 
 ### OpenAI/OpenAI-compatible
 
-- [ ] 实现 OpenAI Provider factory 和配置转换。
-- [ ] 支持 OpenAI-compatible 自定义 endpoint。
-- [ ] 完成纯文本的非流式请求与响应。
-- [ ] 完成 Tool Definition、单 ToolCall 和多 ToolCall 转换。
-- [ ] 完成 Assistant ToolCall + ToolResult 的后续请求转换。
-- [ ] 完成 Usage、finish reason 和标准化错误映射。
-- [ ] 通过共享 Bridge 合约测试。
-- [ ] 使用显式下游流程验证 `LLM -> ToolCall -> ToolResult -> LLM` 闭环。
+- [x] 实现 OpenAI Provider factory 和配置转换。
+- [x] OpenAI/OpenAI-compatible 使用固定 Provider 能力预设；已知模型限制只允许收紧，未知
+      模型不得阻止构造，远端能力偏差必须返回 `ProviderRejected` 而非静默降级。
+- [x] OpenAI 与 OpenAI-compatible 都要求 credential；后者必须显式提供自定义 endpoint，且
+      不得用空凭证或伪造凭证模拟无认证请求。
+- [x] OpenAI Rig Adapter 不支持 Developer role 时必须在能力中声明并本地拒绝，不得转换为
+      System。
+- [x] 支持 OpenAI-compatible 自定义 endpoint。
+- [x] 完成纯文本的非流式请求与响应。
+- [x] 将 `stop`、`seed`、JsonObject 及 JSON Schema 的 name/strict 无损映射到 OpenAI 请求。
+- [x] 完成 Tool Definition、单 ToolCall 和多 ToolCall 转换。
+- [x] 完成 Assistant ToolCall + ToolResult 的后续请求转换。
+- [x] 验证 OpenAI ToolResult 转换保留 `call_id`、content 和顺序，不下发 `is_error`，且
+      `is_error = true` 时不拒绝请求、不自动包装内容。
+- [x] 完成 Usage、finish reason 和标准化错误映射。
+- [x] 通过共享 Bridge 合约测试。
+- [x] 使用显式下游流程验证 `LLM -> ToolCall -> ToolResult -> LLM` 闭环。
 
 ## P5：Streaming
 

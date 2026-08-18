@@ -743,6 +743,13 @@ Transport，仍由下游根据 `BridgeError` 中的事实决定。
 非有限或负数 temperature、零 `max_output_tokens` 和空 stop string；Provider 特有的范围继续
 由 Adapter 验证。
 
+Bridge 执行单次请求时，将构造期 `defaults` 与 `CompletionRequest.generation` 合并：单次请求
+中 `temperature`、`max_output_tokens` 和 `seed` 的非空值覆盖对应默认值，否则使用默认值；
+单次请求的 `stop` 非空时整体覆盖默认 stop，为空时使用默认 stop。第一阶段的
+`GenerationOptions.stop: Vec<String>` 不提供“单次请求显式清空非空默认 stop”的第三种状态；
+若后续出现该需求，再将其演进为能区分未指定与显式空列表的协议，不在 Adapter 中引入隐式
+哨兵值。
+
 示例 TOML：
 
 ```toml
@@ -1079,6 +1086,9 @@ rig 的 `CompletionModel` 不是 dyn-compatible，因此 Adapter 内部使用泛
 pub struct RigBridge<M> {
     model: M,
     capabilities: BridgeCapabilities,
+    defaults: GenerationOptions,
+    request_mapper: Arc<dyn RigRequestMapper>,
+    normalizer: Arc<dyn RigResponseNormalizer<M::Response>>,
 }
 
 impl<M> LlmBridge for RigBridge<M>
@@ -1092,6 +1102,55 @@ where
 ```
 
 Factory 在运行时匹配 Provider，构造具体的 `RigBridge<M>` 后返回 `Arc<dyn LlmBridge>`。
+
+rig 的通用 `CompletionRequest` 直接承载 Message、Tool、temperature、max tokens、ToolChoice 和
+一部分 output schema，但不统一 `stop`、`seed`、JSON Object，以及 JSON Schema 的 name/strict
+等 Provider wire 差异。`RigBridge<M>` 因此持有私有、窄化的 `RigRequestMapper`，由对应
+Provider Factory 注入。Mapper 只负责合并生成默认值、复用公共协议转换，并将标准请求字段与
+本 Provider 的命名空间扩展映射到 rig 请求及其 `additional_params`；它不发送请求，也不处理
+响应。
+
+构造期 `provider_options` 是已由 Factory 校验的 Provider 默认选项；请求级扩展只读取当前
+Provider/Adapter 命名空间，并可覆盖同名的 Provider 特有选项。未知命名空间、未知字段和错误
+类型必须在请求发送前拒绝。`provider_options` 和请求扩展都不得重复设置或覆盖已经由
+`GenerationOptions`、`OutputFormat`、`ToolChoice` 等公共字段表达的标准语义。
+
+rig 的通用 `CompletionResponse<T>` 只标准化 choice、usage 和 message ID；实际模型、完整结束
+原因及部分安全 metadata 仍位于 Provider-specific `raw_response`。`RigBridge<M>` 因此持有一个
+私有、窄化的 `RigResponseNormalizer<M::Response>`，由对应 Provider Factory 注入。Normalizer
+只负责从 raw response 提取 Armillae 已定义的响应事实和经过筛选的 metadata，不重新实现
+请求发送，也不把完整 raw response 暴露到公共协议。
+
+`RigRequestMapper` 和 `RigResponseNormalizer` 是两个单向边界，不合并为同时负责请求、响应或
+传输的宽泛 Provider Codec。实际网络调用始终只由 rig `CompletionModel` 执行。
+
+不得根据“是否出现 ToolCall”等内容猜测 Provider 已明确返回的结束原因。Provider 返回未知
+结束值时转换为 `FinishReason::Unknown`；协议允许缺失的 ID/model 保持 `None`，协议要求存在
+但实际缺失时返回 `InvalidProviderResponse`。第一阶段 OpenAI Normalizer 读取 OpenAI raw
+response；后续 Provider 各自实现同一私有边界。
+
+rig 通用 Message 无法原样发出 Developer role 时，相应 Rig Adapter 必须声明
+`developer_message = false` 并在能力预检阶段拒绝，不能静默转换为 System。
+
+`BridgeCapabilities` 表达当前 Adapter 与所选 Provider profile 能够承载的公共协议能力，不把
+模型名称当作运行时能力发现机制。第一阶段 OpenAI/OpenAI-compatible Factory 使用固定的
+OpenAI Provider 能力预设：支持 Tool Calling、并行 ToolCall、全部已定义 ToolChoice、JSON
+Object、JSON Schema 和 System role，不支持 Developer role；P4 的非流式 Adapter 还必须声明
+`streaming = false`。选择 `provider = "openai-compatible"` 表示调用方声明自定义 endpoint 符合
+该 OpenAI profile，而不是要求 Adapter 根据 endpoint 或模型名称进行探测。
+
+未来若 Adapter 内置某些已知模型的可靠限制，只能在 Provider 预设基础上收紧能力，不能因为
+未知模型名称而拒绝构造，也不能静默放宽或降级请求。若远端实际能力与声明的 Provider profile
+不一致，Provider 的拒绝必须转换为 `ProviderRejected`；Adapter 不根据失败响应自动改写请求或
+切换能力。
+
+第一阶段 OpenAI/OpenAI-compatible Factory 直接使用 rig 的 OpenAI Chat Completions Client。
+该 Client 的原生构造契约要求 API Key 并发送 Bearer Authorization Header，因此两种 Provider
+配置都必须提供 `credential`；不得使用伪造或空凭证模拟无认证请求。`provider = "openai"` 未
+配置 endpoint 时使用 rig 的 OpenAI 默认地址，也可显式提供经过宿主策略校验的自定义 endpoint；
+`provider = "openai-compatible"` 必须显式提供自定义 endpoint。完全无认证的兼容端点不属于
+该 Factory 的第一阶段契约，后续应通过对应的具名 Provider Adapter 或明确的无认证 Provider
+实现支持，而不是在 OpenAI Client 中隐式省略认证。
 
 ### 9.3 转换边界
 
@@ -1114,6 +1173,17 @@ Rig Error                  → Armillae BridgeError
 - Provider 原始未知输出转换为 ProviderData。
 - Provider 原始响应只进入受控 metadata，不把 Secret 写入日志。
 - 不依赖 Rig Agent 的 Tool 注册或执行路径。
+
+`ToolResult.is_error` 是 Armillae 公共协议的一部分，但 Provider 线协议未必有对应字段。Adapter
+必须为每个 Provider 显式定义该字段的兼容策略：Provider 原生支持错误标记时进行语义映射；
+Provider 不支持时，不得因此拒绝 ToolResult，也不得擅自改写或包装调用方提供的内容。
+
+第一阶段 OpenAI/OpenAI-compatible 的 tool message 不承载独立的 `is_error` 字段，因此转换时
+保留 `call_id`、content 及其顺序，但不把 `is_error` 下发到 Provider。原始 Armillae 请求和
+调用方维护的消息历史仍保留该字段；调用方在 `is_error = true` 时必须通过 ToolResult content
+向模型表达失败事实。Adapter 不自动添加错误前缀或结构，以免改变调用方定义的模型可见内容。
+此行为必须由转换测试覆盖，不能作为未记录的字段丢弃。后续 Anthropic 等 Provider 若有原生
+错误标记，应映射该标记，而不是沿用 OpenAI 的省略策略。
 
 ### 9.4 首批 Provider
 
