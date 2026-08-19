@@ -4,8 +4,8 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-armillae-core = { version = "0.1.0", path = "../armillae-core" }
-armillae-llm = { version = "0.1.0", path = "../armillae-llm" }
+armillae-core = { version = "0.1.0-alpha.0", path = "../armillae-core" }
+armillae-llm = { version = "0.1.0-alpha.0", path = "../armillae-llm" }
 rig-core = "=0.41.0"
 secrecy = "0.10"
 serde_json = "1"
