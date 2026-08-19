@@ -1,6 +1,6 @@
 [branches]
 base = "main"
-release = "main"
+release = "release"
 
 [tags]
 chore = "Chores"

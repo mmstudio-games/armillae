@@ -276,7 +276,8 @@ Cargo `version.workspace = true`，不得用于维护当前配置。
 第一阶段的发布约定为：
 
 - 使用 Rust workspace resolver 发现四个 crate；
-- base branch 与 release branch 均为 `main`；
+- base branch 为 `main`，release branch 为独立的 `release`；两者不得相同，避免 Semifold 将
+  版本提交直接强推到 base branch，或尝试创建源分支与目标分支相同的 release PR；
 - 四个 crate 均使用 `alpha` 发布通道，首次进入通道时保留当前稳定版本基准，不额外执行
   patch、minor 或 major 提升；
 - 使用 Semifold 默认 changelog 标签；

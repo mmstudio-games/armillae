@@ -51,8 +51,8 @@
       发布通道。
 - [x] 添加可由 Pull Request 和 Semifold CD 复用的 Rust CI，覆盖格式、check、全部离线测试、
       严格 Clippy 和文档构建。
-- [x] 按 Semifold 0.3.0 Jinja 模板生成 PR status 与 `main` version/publish workflow，并保持
-      step output、权限和 Rust registry token 契约。
+- [x] 修正 Semifold release-PR 拓扑：以 `main` 为 base branch、独立的 `release` 为 release
+      branch，同时保持既有 PR status 与 version/publish workflow 不变。
 - [x] Semifold CD 必须在同一提交的 Rust CI 通过后运行，且标准 CI 不执行 ignored Live
       Provider 测试或注入 Provider 凭证。
 
