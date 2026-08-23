@@ -1,6 +1,7 @@
 mod bridge;
 mod convert;
 mod factory;
+mod providers;
 mod request;
 mod response;
 
