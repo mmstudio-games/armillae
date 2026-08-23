@@ -259,7 +259,7 @@ crates/armillae-rag/              # 组合检索、重排、上下文组装与 L
 | `armillae-core` | `serde`、`serde_json`、`schemars`、`thiserror` |
 | `armillae-llm` | `armillae-core`、`futures-core`/`futures-util`、`serde`、`serde_json`、`toml`、`url`、`secrecy` |
 | `armillae-tools` | `armillae-core`、`futures-util`、`schemars`、`serde`、`serde_json`、`thiserror` |
-| `armillae-llm-rig` | `armillae-core`、`armillae-llm`、`rig-core`、`tokio` |
+| `armillae-llm-rig` | `armillae-core`、`armillae-llm`、`rig-core`、`futures-util`、`tokio` |
 
 公共 Bridge 和 Tool 接口只暴露标准 `Future`/`Stream` 语义，不把 Tokio 类型放入协议层。首个 rig Adapter 可以使用 Tokio 作为执行环境。rig 依赖以 Spike 验证过的精确版本锁定；本设计调研基线为 `rig-core = 0.41.0`。
 
@@ -1189,8 +1189,8 @@ Object、JSON Schema 和 System role，不支持 Developer role；P4 的非流�
 该 Factory 的第一阶段契约，后续应通过对应的具名 Provider Adapter 或明确的无认证 Provider
 实现支持，而不是在 OpenAI Client 中隐式省略认证。
 
-P5 前额外提供 `deepseek`、`minimax` 和 `moonshot` 三个具名 Provider，但只接入它们由 rig
-暴露的 OpenAI-compatible、非流式 Chat Completions 路径。MiniMax 和 Moonshot 同时提供的
+额外提供 `deepseek`、`minimax` 和 `moonshot` 三个具名 Provider，只接入它们由 rig
+暴露的 OpenAI-compatible Chat Completions 路径。MiniMax 和 Moonshot 同时提供的
 Anthropic-compatible 路径、Model Listing、Embedding、多模态及 Provider 高级参数不属于该
 增量范围。三者分别使用 rig 的原生 Provider Client，以保留其请求线格式修正和响应类型；
 不得把具名 Provider 简化为仅替换 endpoint 的 `openai-compatible`，否则会绕过 rig 已知的
@@ -1215,13 +1215,36 @@ DeepSeek 在未显式关闭 thinking 时会抑制强制 ToolChoice；本阶段�
 必须在本地拒绝 `required` 和 `specific`。Moonshot 的 rig 路径会把 `required` 改写为
 `auto` 并注入提示消息、对 `specific` 返回 Provider 错误；Armillae 不接受这种语义降级，
 必须在能力预检阶段拒绝两者。DeepSeek 和 Moonshot 的 rig profile 都不支持 JSON Schema
-response format，Adapter 只声明 JSON Object。所有 P4 Provider 仍声明 `streaming = false`。
+response format，Adapter 只声明 JSON Object。P4 非流式实现完成时这些 Provider 声明
+`streaming = false`；通过 P5 Streaming 合约后，`openai`、`openai-compatible`、`deepseek`、
+`minimax` 和 `moonshot` 统一声明 `streaming = true`，其他能力矩阵保持不变。
 
 MiniMax 和 Moonshot 的 OpenAI-compatible 响应复用 OpenAI raw response normalizer，但错误
 metadata 必须保留具名 Provider。DeepSeek 使用自身 raw response normalizer，保留其可选
 response ID/model、finish reason、system fingerprint、缓存 token usage 和 reasoning 内容；
 reasoning 继续按公共转换规则进入 `ProviderData { provider = "deepseek" }`，不得静默丢弃。
 三个 Provider 的 OpenAI-compatible ToolResult 都沿用本节记录的 `is_error` 省略策略。
+
+P5 Streaming 复用相同的 Request Mapper、能力预检和 rig `CompletionModel::stream` 传输边界，
+由 Provider 无关的私有流式状态机将 rig item 转换为 Armillae 事件。五个当前 Provider 使用同一
+Streaming 合约，不为具名 Provider 复制或分叉公共语义。MiniMax 和 Moonshot 仍不接入
+Anthropic-compatible API。
+
+rig 0.41 的公开 OpenAI-compatible stream item 不暴露响应 ID、实际 model 或 finish reason，
+因此流式 `ResponseStarted` 的 `id`/`model` 和最终 `CompletionResponse` 的
+`id`/`model`/`finish_reason` 保持 `None`，不得依据配置、内容或 ToolCall 猜测。终端
+`Final` item 报告的 Usage 必须保留；Reasoning 转为 `ProviderData` 内容和
+`ProviderEvent`，未知 rig stream item 转为 `ProviderEvent`。
+
+ToolCall 增量以 rig 的 `internal_call_id` 作为交错分片关联键，以 Provider 提供的非空 ID 作为
+Armillae `ToolCallId`。名称和参数可以跨任意 item 缓冲，但只有收到 rig 的完整 ToolCall 且
+参数为完整 JSON 后才能产生 `ToolCallCompleted`。Provider 未提供非空 ID 时，可以基于该次流
+内部稳定关联键生成仅在本响应内唯一的 ID，不得跨响应推断或复用。
+
+成功流必须先后产生唯一 `ResponseStarted` 和唯一终端 `ResponseCompleted`；Usage 在终端响应
+前报告。任何 item 级错误、未收到终端 `Final`、或流结束时仍有不完整 ToolCall，均以一个
+`StreamInterrupted` 终止，不补发 `ContentCompleted` 或 `ResponseCompleted` 伪造完整响应。
+调用方 drop Armillae stream 时必须同步 drop 所持有的 rig stream，以尽快释放/取消底层请求。
 
 ### 9.3 转换边界
 
@@ -1261,8 +1284,9 @@ Provider 不支持时，不得因此拒绝 ToolResult，也不得擅自改写或
 第一阶段按以下顺序扩展 Provider：
 
 1. OpenAI 或 OpenAI-compatible：验证主协议和自定义 endpoint。
-2. MiniMax、Moonshot 和 DeepSeek 的 OpenAI-compatible 非流式路径：验证具名 Provider
-   路由、保守能力预检和 Provider-specific raw response 归一化。
+2. MiniMax、Moonshot 和 DeepSeek 的 OpenAI-compatible 路径：先验证具名 Provider 路由、
+   保守能力预检和 Provider-specific raw response 归一化，再与 OpenAI/OpenAI-compatible
+   一同通过 P5 Streaming 合约。
 3. Anthropic：未来验证原生 Tool 协议和消息差异。
 4. Ollama：未来验证本地 Provider 和 NDJSON 流式路径。
 
@@ -1359,7 +1383,8 @@ let final_response = bridge
 - 多 ToolCall 交错增量；
 - 完成时完整 ToolCall JSON 可解析；
 - 流中断不产生 ResponseCompleted；
-- Usage 出现在最终或独立事件时均正确汇总；
+- 覆盖 rig terminal `Final` 带 Usage 与缺失 Usage；带 Usage 时转换为独立 `Usage` 事件并进入
+  最终响应；
 - 未知 Provider 事件不会丢失；
 - drop Stream 后底层调用被取消。
 
@@ -1452,8 +1477,10 @@ Bridge 一次只执行一个 Model Call 的边界。完整测试证据和限制�
 
 ### P5：Streaming
 
-- 实现文本和 ToolCall 语义事件。
-- 完成参数重组、中断和取消测试。
+- 为 OpenAI、OpenAI-compatible、DeepSeek、MiniMax 和 Moonshot 实现统一的文本、Reasoning、
+  ToolCall、Usage 与未知 Provider 语义事件。
+- 完成参数重组、多 ToolCall 交错、中断、唯一完成事件和 drop 取消测试。
+- 保持 rig 0.41 stream 层未暴露的 ID、model 和 finish reason 为缺失值，不进行推断。
 
 ### P6：更多 Provider
 

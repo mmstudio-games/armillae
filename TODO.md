@@ -8,12 +8,12 @@
 
 ## 总体边界
 
-- [ ] 保持 Bridge 一次只执行一个 Model Call，不自动执行 Tool 或驱动 Tool Continuation Loop。
-- [ ] 保持 Tool Executor 一次只执行一个 ToolCall，不调用 Bridge。
-- [ ] 保持 `armillae-core`、`armillae-llm`、`armillae-tools` 和
+- [x] 保持 Bridge 一次只执行一个 Model Call，不自动执行 Tool 或驱动 Tool Continuation Loop。
+- [x] 保持 Tool Executor 一次只执行一个 ToolCall，不调用 Bridge。
+- [x] 保持 `armillae-core`、`armillae-llm`、`armillae-tools` 和
       `armillae-llm-rig` 的设计依赖方向。
-- [ ] 确保除 `armillae-llm-rig` 外没有 crate 依赖或暴露 rig 类型。
-- [ ] 不在第一阶段引入 Turn Runner、完整 Agent、Memory、Embedding、Vector Store、RAG、
+- [x] 确保除 `armillae-llm-rig` 外没有 crate 依赖或暴露 rig 类型。
+- [x] 不在第一阶段引入 Turn Runner、完整 Agent、Memory、Embedding、Vector Store、RAG、
       工作流编排或世界状态。
 
 ## P0：rig 低层可行性 Spike
@@ -69,10 +69,10 @@
 ### Completion 协议
 
 - [x] 实现 `CompletionRequest`、`OutputFormat`、`GenerationOptions` 和 `ProviderExtensions`。
-- [ ] 使用命名空间隔离 Provider 扩展，并默认拒绝未知扩展。
+- [x] 使用命名空间隔离 Provider 扩展，并默认拒绝未知扩展。
 - [x] 实现 `CompletionResponse`、`AssistantContent`、`FinishReason` 和 `TokenUsage`。
 - [x] 允许 Provider 缺失 finish reason，并区分缺失值与明确返回的未知值，不根据内容推断。
-- [ ] 在 Adapter 转换中确保 `ProviderData` 不被用于绕过已有标准字段。
+- [x] 在 Adapter 转换中确保 `ProviderData` 不被用于绕过已有标准字段。
 - [x] 支持未知 finish reason 和 ProviderData 的前向兼容。
 
 ### Streaming 协议
@@ -80,8 +80,8 @@
 - [x] 实现 `CompletionEvent` 和 `ContentKind`。
 - [x] 定义并验证稳定 content index、started/completed 配对和事件顺序。
 - [x] 通过 `ToolCall.arguments: Value` 保证 `ToolCallCompleted` 只携带完整 JSON。
-- [ ] 保证成功流只产生一个 `ResponseCompleted`。
-- [ ] 保证中断流不构造虚假的完整响应。
+- [x] 保证成功流只产生一个 `ResponseCompleted`。
+- [x] 保证中断流不构造虚假的完整响应。
 
 ### Core 测试
 
@@ -131,17 +131,17 @@
 - [x] 使用标准 Future/Stream 语义，不在公共接口暴露 Tokio 类型。
 - [x] 实现细分 ToolChoice 与 OutputFormat 支持的 `BridgeCapabilities`。
 - [x] 在请求发送前验证 Streaming、Tool Calling、ToolChoice、Structured Output 和 Role 能力。
-- [ ] 能力由 Provider/模型基线和 Adapter 验证结果决定，不提供可序列化覆盖，也不得虚构
+- [x] 能力由 Provider/模型基线和 Adapter 验证结果决定，不提供可序列化覆盖，也不得虚构
       Provider 能力。
-- [ ] 不支持的能力必须明确报错，不伪造流或静默降级。
+- [x] 不支持的能力必须明确报错，不伪造流或静默降级。
 
 ### 错误与取消
 
 - [x] 实现设计中定义的完整 `BridgeError` 分类和 `ErrorMetadata`。
 - [x] 保留 Provider、HTTP 状态码、请求 ID、retryable 和 retry-after 等可判断事实。
-- [ ] 对 Future/Stream drop 定义并实现取消语义。
-- [ ] 将完成前的流失败映射为 `StreamInterrupted`。
-- [ ] 确保错误 Display、Debug 和 tracing 不包含 Secret 或完整敏感响应。
+- [x] 对 Future/Stream drop 定义并实现取消语义。
+- [x] 将完成前的流失败映射为 `StreamInterrupted`。
+- [x] 确保错误 Display、Debug 和 tracing 不包含 Secret 或完整敏感响应。
 
 ### 配置、Secret 与 Factory
 
@@ -225,30 +225,36 @@
       缓存 Usage 和 reasoning ProviderData。
 - [x] 覆盖配置、默认/自定义 endpoint、能力预检、文本与 ToolCall wire contract、共享 Bridge
       合约和 Provider 错误分类。
+- [x] 与 OpenAI/OpenAI-compatible 一同通过 P5 Streaming 合约；MiniMax/Moonshot 仍只使用
+      OpenAI-compatible API。
 
 ## P5：Streaming
 
 ### 流式转换与重组
 
-- [ ] 将 Provider 原始 SSE/NDJSON chunk 转换为 Armillae 语义事件。
-- [ ] 实现文本内容的 started/delta/completed 事件。
-- [ ] 按稳定 index/call 分别缓冲 ToolCall 名称和参数。
-- [ ] 支持名称、JSON token 和 UTF-8 字符跨底层 chunk。
-- [ ] 支持多个 ToolCall 的交错增量。
-- [ ] 完整参数解析成功后生成 `ToolCallCompleted`。
-- [ ] 汇总 Usage、finish reason、ProviderData 和最终 `CompletionResponse`。
-- [ ] 保证最终流式响应与等价非流式响应具有一致语义结构。
-- [ ] 未识别 Provider 事件通过 `ProviderEvent` 暴露。
+- [x] 为 `openai`、`openai-compatible`、`deepseek`、`minimax` 和 `moonshot` 开启统一
+      Streaming 能力，不扩展到 P6 Provider。
+- [x] 将当前 Provider 原始 SSE chunk 转换为 Armillae 语义事件；NDJSON 留给 P6 Ollama。
+- [x] 实现文本内容的 started/delta/completed 事件。
+- [x] 按稳定 index/call 分别缓冲 ToolCall 名称和参数。
+- [x] 支持名称、JSON token 和 UTF-8 字符跨底层 chunk。
+- [x] 支持多个 ToolCall 的交错增量。
+- [x] 完整参数解析成功后生成 `ToolCallCompleted`。
+- [x] 汇总 Rig 已暴露的 Usage、ProviderData 和最终 `CompletionResponse`。
+- [x] 在 Rig 已暴露事实范围内保证最终流式响应与等价非流式响应具有一致语义结构。
+- [x] 未识别 Provider 事件通过 `ProviderEvent` 暴露。
+- [x] rig 0.41 未暴露的流式 response ID、model 和 finish reason 保持 `None`，不根据请求或
+      内容推断。
 
 ### Streaming 测试
 
-- [ ] 使用任意数量和边界的文本 chunk 验证重组一致性。
-- [ ] 覆盖 Tool 名称、JSON token 和 UTF-8 字节边界分片。
-- [ ] 覆盖多 ToolCall 交错、稳定 index 和 ID 保持。
-- [ ] 覆盖完成时 JSON 无效和流中断路径。
-- [ ] 覆盖 Usage 位于最终事件或独立事件的两种路径。
-- [ ] 验证成功流只产生一个 `ResponseCompleted`，失败流不产生该事件。
-- [ ] 验证 drop Stream 后底层调用取消。
+- [x] 使用任意数量和边界的文本 chunk 验证重组一致性。
+- [x] 覆盖 Tool 名称、JSON token 和 UTF-8 字节边界分片。
+- [x] 覆盖多 ToolCall 交错、稳定 index 和 ID 保持。
+- [x] 覆盖完成时 JSON 无效和流中断路径。
+- [x] 覆盖 Rig terminal `Final` 带 Usage 与缺失 Usage，并验证独立 `Usage` 事件。
+- [x] 验证成功流只产生一个 `ResponseCompleted`，失败流不产生该事件。
+- [x] 验证 drop Stream 后底层调用取消。
 
 ## P6：更多 Provider
 

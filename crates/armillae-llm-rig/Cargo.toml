@@ -6,6 +6,7 @@ edition.workspace = true
 [dependencies]
 armillae-core = { version = "0.1.0", path = "../armillae-core" }
 armillae-llm = { version = "0.1.0", path = "../armillae-llm" }
+futures-util = "0.3.34"
 rig-core = "=0.41.0"
 secrecy = "0.10"
 serde_json = "1"

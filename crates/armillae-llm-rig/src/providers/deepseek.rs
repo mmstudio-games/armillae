@@ -62,7 +62,7 @@ where
 
 const fn capabilities() -> BridgeCapabilities {
     BridgeCapabilities {
-        streaming: false,
+        streaming: true,
         tool_calling: true,
         parallel_tool_calls: true,
         tool_choice: ToolChoiceCapabilities {
@@ -147,14 +147,23 @@ mod tests {
         AssistantContent, CompletionRequest, CompletionResponse, FinishReason, Message,
         OutputFormat, TextContent, TokenUsage, ToolChoice, ToolDefinition,
     };
-    use armillae_llm::{BridgeError, mock::contract::verify_completion};
+    use armillae_llm::{
+        BridgeError,
+        mock::contract::{validate_stream_events, verify_completion},
+    };
+    use futures::StreamExt;
     use rig_core::test_utils::RecordingHttpClient;
     use serde_json::{Value, json};
 
     use super::{
         DeepSeekResponseNormalizer, RigResponseNormalizer, capabilities, create, create_validated,
     };
-    use crate::providers::{test_support::resolved_config, validate_named_config};
+    use crate::providers::{
+        test_support::{
+            expected_text_stream, resolved_config, streaming_client, text_stream_client,
+        },
+        validate_named_config,
+    };
 
     #[test]
     fn configuration_and_capability_profile_are_explicit() {
@@ -168,7 +177,7 @@ mod tests {
         let unknown_options = create(config, credential);
 
         assert_eq!(bridge.capabilities(), capabilities());
-        assert!(!bridge.capabilities().streaming);
+        assert!(bridge.capabilities().streaming);
         assert!(matches!(
             missing_credential,
             Err(BridgeError::InvalidConfiguration { .. })
@@ -177,6 +186,134 @@ mod tests {
             unknown_options,
             Err(BridgeError::InvalidConfiguration { .. })
         ));
+    }
+
+    #[test]
+    fn deepseek_streams_over_its_native_openai_compatible_client() {
+        let (config, credential) =
+            resolved_config("deepseek", Some("http://deepseek.test"), true, json!({}));
+        futures::executor::block_on(async {
+            let (config, credential, request_mapper) =
+                validate_named_config(config, credential, "deepseek", "DeepSeek")
+                    .expect("DeepSeek stream config must validate");
+            let bridge = create_validated(config, credential, request_mapper, text_stream_client())
+                .expect("DeepSeek stream bridge must construct");
+            let request = CompletionRequest {
+                messages: vec![Message::user("hello")],
+                ..CompletionRequest::default()
+            };
+
+            let mut stream = bridge
+                .stream(request)
+                .await
+                .expect("DeepSeek stream must start");
+            let mut events = Vec::new();
+            while let Some(event) = stream.next().await {
+                events.push(event.expect("DeepSeek stream item must convert"));
+            }
+            let response = validate_stream_events(&events)
+                .expect("DeepSeek must satisfy the shared streaming event contract");
+            assert_eq!(response, &expected_text_stream());
+        });
+    }
+
+    #[test]
+    fn deepseek_stream_preserves_reasoning_and_cached_usage() {
+        let (config, credential) =
+            resolved_config("deepseek", Some("http://deepseek.test"), true, json!({}));
+        futures::executor::block_on(async {
+            let events = vec![
+                json!({
+                    "id": "deepseek-stream",
+                    "model": "deepseek-reasoner",
+                    "choices": [{
+                        "delta": { "reasoning_content": "思" },
+                        "finish_reason": null
+                    }],
+                    "usage": null
+                }),
+                json!({
+                    "id": "deepseek-stream",
+                    "model": "deepseek-reasoner",
+                    "choices": [{
+                        "delta": { "reasoning_content": "考" },
+                        "finish_reason": null
+                    }],
+                    "usage": null
+                }),
+                json!({
+                    "id": "deepseek-stream",
+                    "model": "deepseek-reasoner",
+                    "choices": [{
+                        "delta": { "content": "答案" },
+                        "finish_reason": null
+                    }],
+                    "usage": null
+                }),
+                json!({
+                    "id": "deepseek-stream",
+                    "model": "deepseek-reasoner",
+                    "choices": [{
+                        "delta": {},
+                        "finish_reason": "stop"
+                    }],
+                    "usage": null
+                }),
+                json!({
+                    "id": "deepseek-stream",
+                    "model": "deepseek-reasoner",
+                    "choices": [],
+                    "usage": {
+                        "prompt_tokens": 6,
+                        "completion_tokens": 4,
+                        "total_tokens": 10,
+                        "prompt_cache_hit_tokens": 2,
+                        "prompt_cache_miss_tokens": 4,
+                        "prompt_tokens_details": { "cached_tokens": 2 },
+                        "completion_tokens_details": { "reasoning_tokens": 2 }
+                    }
+                }),
+            ];
+            let (config, credential, request_mapper) =
+                validate_named_config(config, credential, "deepseek", "DeepSeek")
+                    .expect("DeepSeek reasoning stream config must validate");
+            let bridge =
+                create_validated(config, credential, request_mapper, streaming_client(events))
+                    .expect("DeepSeek reasoning stream bridge must construct");
+            let mut stream = bridge
+                .stream(CompletionRequest {
+                    messages: vec![Message::user("reason")],
+                    ..CompletionRequest::default()
+                })
+                .await
+                .expect("DeepSeek reasoning stream must start");
+            let mut observed = Vec::new();
+            while let Some(event) = stream.next().await {
+                observed.push(event.expect("DeepSeek reasoning item must convert"));
+            }
+            let response = validate_stream_events(&observed)
+                .expect("DeepSeek reasoning events must satisfy the shared contract");
+
+            assert!(matches!(
+                &response.content[0],
+                AssistantContent::ProviderData(data)
+                    if data.provider == "deepseek"
+                        && data.kind == "reasoning"
+                        && data.value["content"][0]["content"]["text"] == "思考"
+            ));
+            assert!(matches!(
+                &response.content[1],
+                AssistantContent::Text(text) if text.text == "答案"
+            ));
+            assert_eq!(
+                response
+                    .usage
+                    .as_ref()
+                    .expect("DeepSeek stream usage must be retained")
+                    .cached_input_tokens,
+                Some(2)
+            );
+        });
     }
 
     #[test]

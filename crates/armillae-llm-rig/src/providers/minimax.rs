@@ -56,7 +56,7 @@ where
 
 const fn capabilities() -> BridgeCapabilities {
     BridgeCapabilities {
-        streaming: false,
+        streaming: true,
         tool_calling: true,
         parallel_tool_calls: true,
         tool_choice: ToolChoiceCapabilities::all(),
@@ -72,12 +72,18 @@ mod tests {
         AssistantContent, CompletionRequest, CompletionResponse, FinishReason, Message,
         OutputFormat, TokenUsage, ToolCall, ToolCallId, ToolChoice, ToolDefinition,
     };
-    use armillae_llm::{BridgeError, mock::contract::verify_completion};
+    use armillae_llm::{
+        BridgeError,
+        mock::contract::{verify_completion, verify_stream},
+    };
     use rig_core::test_utils::RecordingHttpClient;
     use serde_json::{Value, json};
 
     use super::{
-        super::{test_support::resolved_config, validate_named_config},
+        super::{
+            test_support::{expected_text_stream, resolved_config, text_stream_client},
+            validate_named_config,
+        },
         capabilities, create, create_validated,
     };
 
@@ -93,7 +99,7 @@ mod tests {
         let unknown_options = create(config, credential);
 
         assert_eq!(bridge.capabilities(), capabilities());
-        assert!(!bridge.capabilities().streaming);
+        assert!(bridge.capabilities().streaming);
         assert!(matches!(
             missing_credential,
             Err(BridgeError::InvalidConfiguration { .. })
@@ -102,6 +108,27 @@ mod tests {
             unknown_options,
             Err(BridgeError::InvalidConfiguration { .. })
         ));
+    }
+
+    #[test]
+    fn minimax_streams_over_its_native_openai_compatible_client() {
+        let (config, credential) =
+            resolved_config("minimax", Some("http://minimax.test/v1"), true, json!({}));
+        futures::executor::block_on(async {
+            let (config, credential, request_mapper) =
+                validate_named_config(config, credential, "minimax", "MiniMax")
+                    .expect("MiniMax stream config must validate");
+            let bridge = create_validated(config, credential, request_mapper, text_stream_client())
+                .expect("MiniMax stream bridge must construct");
+            let request = CompletionRequest {
+                messages: vec![Message::user("hello")],
+                ..CompletionRequest::default()
+            };
+
+            verify_stream(bridge.as_ref(), request, &expected_text_stream())
+                .await
+                .expect("MiniMax must satisfy the shared streaming contract");
+        });
     }
 
     #[test]

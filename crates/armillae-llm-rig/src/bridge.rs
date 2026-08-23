@@ -7,6 +7,7 @@ use rig_core::completion::CompletionModel;
 use crate::{
     request::RigRequestMapper,
     response::{self, RigResponseNormalizer},
+    stream,
 };
 
 pub struct RigBridge<M>
@@ -32,12 +33,6 @@ where
         normalizer: Arc<dyn RigResponseNormalizer<M::Response>>,
     ) -> Result<Self, BridgeError> {
         capabilities.validate()?;
-        if capabilities.streaming {
-            return Err(BridgeError::InvalidConfiguration {
-                message: "non-streaming RigBridge cannot advertise streaming capability".to_owned(),
-            });
-        }
-
         Ok(Self {
             model,
             capabilities,
@@ -80,9 +75,16 @@ where
     ) -> BoxFuture<'a, Result<CompletionStream, BridgeError>> {
         Box::pin(async move {
             self.capabilities.validate_streaming_request(&request)?;
-            Err(BridgeError::UnsupportedCapability {
-                capability: "streaming".to_owned(),
-            })
+            let request = self.request_mapper.map_request(request, &self.defaults)?;
+            let response = self
+                .model
+                .stream(request)
+                .await
+                .map_err(|error| self.normalizer.normalize_error(error))?;
+            Ok(stream::completion_stream(
+                response,
+                self.normalizer.provider(),
+            ))
         })
     }
 }
@@ -97,7 +99,8 @@ mod tests {
     };
     use armillae_llm::{
         BridgeCapabilities, BridgeError, LlmBridge, OutputFormatCapabilities,
-        ToolChoiceCapabilities, mock::contract::verify_completion,
+        ToolChoiceCapabilities,
+        mock::contract::{verify_completion, verify_stream},
     };
     use futures::stream;
     use rig_core::{
@@ -106,7 +109,7 @@ mod tests {
             CompletionError, CompletionModel, CompletionRequest as RigCompletionRequest,
             CompletionResponse as RigCompletionResponse, GetTokenUsage, Usage,
         },
-        streaming::{StreamingCompletionResponse, StreamingResult},
+        streaming::{RawStreamingChoice, StreamingCompletionResponse, StreamingResult},
     };
     use serde::{Deserialize, Serialize};
     use serde_json::{Value, json};
@@ -163,9 +166,16 @@ mod tests {
 
         async fn stream(
             &self,
-            _request: RigCompletionRequest,
+            request: RigCompletionRequest,
         ) -> Result<StreamingCompletionResponse<Self::StreamingResponse>, CompletionError> {
-            let inner: StreamingResult<ProbeResponse> = Box::pin(stream::empty());
+            self.requests
+                .lock()
+                .expect("the probe request lock must not be poisoned")
+                .push(request);
+            let inner: StreamingResult<ProbeResponse> = Box::pin(stream::iter([
+                Ok(RawStreamingChoice::Message("hello".to_owned())),
+                Ok(RawStreamingChoice::FinalResponse(ProbeResponse)),
+            ]));
             Ok(StreamingCompletionResponse::stream(inner))
         }
     }
@@ -192,7 +202,7 @@ mod tests {
 
     fn capabilities() -> BridgeCapabilities {
         BridgeCapabilities {
-            streaming: false,
+            streaming: true,
             tool_calling: true,
             parallel_tool_calls: true,
             tool_choice: ToolChoiceCapabilities::all(),
@@ -285,36 +295,33 @@ mod tests {
     }
 
     #[test]
-    fn p4_bridge_cannot_advertise_or_fake_streaming() {
-        let model = ProbeModel::default();
-        let mut invalid_capabilities = capabilities();
-        invalid_capabilities.streaming = true;
+    fn p5_bridge_maps_and_executes_one_streaming_model_call() {
+        futures::executor::block_on(async {
+            let model = ProbeModel::default();
+            let bridge = bridge(model.clone());
+            let request = CompletionRequest {
+                messages: vec![Message::user("hello")],
+                ..CompletionRequest::default()
+            };
+            let expected = armillae_core::CompletionResponse {
+                id: None,
+                model: None,
+                content: vec![AssistantContent::Text(TextContent::new("hello"))],
+                finish_reason: None,
+                usage: None,
+                provider_metadata: json!({}),
+            };
 
-        assert!(matches!(
-            RigBridge::new(
-                model.clone(),
-                invalid_capabilities,
-                GenerationOptions::default(),
-                Arc::new(OpenAiRequestMapper::default()),
-                Arc::new(ProbeNormalizer),
-            ),
-            Err(BridgeError::InvalidConfiguration { .. })
-        ));
+            verify_stream(&bridge, request, &expected)
+                .await
+                .expect("RigBridge must satisfy the shared streaming contract");
 
-        let bridge = bridge(model);
-        let result = futures::executor::block_on(bridge.stream(CompletionRequest {
-            messages: vec![Message::user("hello")],
-            ..CompletionRequest::default()
-        }));
-        let error = match result {
-            Ok(_) => panic!("P4 must not synthesize a stream"),
-            Err(error) => error,
-        };
-        assert_eq!(
-            error,
-            BridgeError::UnsupportedCapability {
-                capability: "streaming".to_owned(),
-            }
-        );
+            let requests = model
+                .requests
+                .lock()
+                .expect("the probe request lock must not be poisoned");
+            assert_eq!(requests.len(), 1);
+            assert_eq!(requests[0].temperature, Some(0.25));
+        });
     }
 }

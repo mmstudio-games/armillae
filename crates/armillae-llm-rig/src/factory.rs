@@ -4,7 +4,7 @@ use armillae_llm::{BoxFuture, BridgeError, BridgeFactory, LlmBridge, ResolvedBri
 
 use crate::providers;
 
-/// Constructs non-streaming Rig bridges for the first-phase Provider set.
+/// Constructs Rig bridges for the first-phase Provider set.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct RigBridgeFactory;
 

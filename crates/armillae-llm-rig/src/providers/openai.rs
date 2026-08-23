@@ -89,7 +89,7 @@ where
 
 const fn capabilities() -> BridgeCapabilities {
     BridgeCapabilities {
-        streaming: false,
+        streaming: true,
         tool_calling: true,
         parallel_tool_calls: true,
         tool_choice: ToolChoiceCapabilities::all(),
@@ -114,12 +114,15 @@ mod tests {
     };
     use armillae_llm::{
         BoxFuture, BridgeConfig, BridgeError, CredentialRef, SecretResolver, SecretString,
-        mock::contract::verify_completion,
+        mock::contract::{verify_completion, verify_stream},
     };
     use rig_core::test_utils::{MockHttpResponse, RecordingHttpClient};
     use serde_json::{Value, json};
 
     use super::{capabilities, create, create_validated, validate_config};
+    use crate::providers::test_support::{
+        expected_text_stream, streaming_client, text_stream_client,
+    };
 
     fn tool_call_id(value: &str) -> ToolCallId {
         ToolCallId::new(value).expect("fixture ToolCall IDs are non-empty")
@@ -175,6 +178,155 @@ mod tests {
             create(config, credential).expect("valid OpenAI configuration must construct a bridge");
 
         assert_eq!(bridge.capabilities(), capabilities());
+    }
+
+    #[test]
+    fn openai_and_compatible_stream_across_arbitrary_utf8_byte_boundaries() {
+        let configs = ["openai", "openai-compatible"].map(|provider| {
+            (
+                provider,
+                resolved_config(provider, Some("http://stream.test/v1"), true, json!({})),
+            )
+        });
+        futures::executor::block_on(async {
+            for (provider, (config, credential)) in configs {
+                let (config, credential, request_mapper) = validate_config(config, credential)
+                    .unwrap_or_else(|error| {
+                        panic!("{provider} stream config must validate: {error}")
+                    });
+                let bridge =
+                    create_validated(config, credential, request_mapper, text_stream_client())
+                        .unwrap_or_else(|error| {
+                            panic!("{provider} stream bridge must construct: {error}")
+                        });
+                let request = CompletionRequest {
+                    messages: vec![Message::user("hello")],
+                    ..CompletionRequest::default()
+                };
+
+                verify_stream(bridge.as_ref(), request, &expected_text_stream())
+                    .await
+                    .unwrap_or_else(|error| panic!("{provider} stream contract failed: {error}"));
+            }
+        });
+    }
+
+    #[test]
+    fn openai_stream_reassembles_interleaved_tool_calls() {
+        let (config, credential) =
+            resolved_config("openai", Some("http://stream.test/v1"), true, json!({}));
+        futures::executor::block_on(async {
+            let events = vec![
+                json!({
+                    "id": "tool-stream",
+                    "model": "provider-model",
+                    "choices": [{
+                        "delta": { "tool_calls": [{
+                            "index": 0,
+                            "id": "call-weather",
+                            "function": { "name": "weather", "arguments": "{\"city\":\"上" }
+                        }] },
+                        "finish_reason": null
+                    }],
+                    "usage": null
+                }),
+                json!({
+                    "id": "tool-stream",
+                    "model": "provider-model",
+                    "choices": [{
+                        "delta": { "tool_calls": [{
+                            "index": 1,
+                            "id": "call-dice",
+                            "function": { "name": "dice", "arguments": "{\"sides\":" }
+                        }] },
+                        "finish_reason": null
+                    }],
+                    "usage": null
+                }),
+                json!({
+                    "id": "tool-stream",
+                    "model": "provider-model",
+                    "choices": [{
+                        "delta": { "tool_calls": [{
+                            "index": 0,
+                            "function": { "arguments": "海\"}" }
+                        }] },
+                        "finish_reason": null
+                    }],
+                    "usage": null
+                }),
+                json!({
+                    "id": "tool-stream",
+                    "model": "provider-model",
+                    "choices": [{
+                        "delta": { "tool_calls": [{
+                            "index": 1,
+                            "function": { "arguments": "20}" }
+                        }] },
+                        "finish_reason": null
+                    }],
+                    "usage": null
+                }),
+                json!({
+                    "id": "tool-stream",
+                    "model": "provider-model",
+                    "choices": [{
+                        "delta": {},
+                        "finish_reason": "tool_calls"
+                    }],
+                    "usage": null
+                }),
+                json!({
+                    "id": "tool-stream",
+                    "model": "provider-model",
+                    "choices": [],
+                    "usage": {
+                        "prompt_tokens": 7,
+                        "completion_tokens": 4,
+                        "total_tokens": 11
+                    }
+                }),
+            ];
+            let (config, credential, request_mapper) = validate_config(config, credential)
+                .expect("OpenAI tool stream config must validate");
+            let bridge =
+                create_validated(config, credential, request_mapper, streaming_client(events))
+                    .expect("OpenAI tool stream bridge must construct");
+            let request = CompletionRequest {
+                messages: vec![Message::user("use tools")],
+                ..CompletionRequest::default()
+            };
+            let expected = CompletionResponse {
+                id: None,
+                model: None,
+                content: vec![
+                    AssistantContent::ToolCall(armillae_core::ToolCall {
+                        id: ToolCallId::new("call-weather")
+                            .expect("fixture ToolCall ID must be non-empty"),
+                        name: "weather".to_owned(),
+                        arguments: json!({ "city": "上海" }),
+                    }),
+                    AssistantContent::ToolCall(armillae_core::ToolCall {
+                        id: ToolCallId::new("call-dice")
+                            .expect("fixture ToolCall ID must be non-empty"),
+                        name: "dice".to_owned(),
+                        arguments: json!({ "sides": 20 }),
+                    }),
+                ],
+                finish_reason: None,
+                usage: Some(TokenUsage {
+                    input_tokens: Some(7),
+                    output_tokens: Some(4),
+                    total_tokens: Some(11),
+                    cached_input_tokens: Some(0),
+                }),
+                provider_metadata: json!({}),
+            };
+
+            verify_stream(bridge.as_ref(), request, &expected)
+                .await
+                .expect("OpenAI interleaved ToolCalls must satisfy the shared stream contract");
+        });
     }
 
     #[test]
