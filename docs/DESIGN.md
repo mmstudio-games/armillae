@@ -1189,6 +1189,40 @@ Object、JSON Schema 和 System role，不支持 Developer role；P4 的非流�
 该 Factory 的第一阶段契约，后续应通过对应的具名 Provider Adapter 或明确的无认证 Provider
 实现支持，而不是在 OpenAI Client 中隐式省略认证。
 
+P5 前额外提供 `deepseek`、`minimax` 和 `moonshot` 三个具名 Provider，但只接入它们由 rig
+暴露的 OpenAI-compatible、非流式 Chat Completions 路径。MiniMax 和 Moonshot 同时提供的
+Anthropic-compatible 路径、Model Listing、Embedding、多模态及 Provider 高级参数不属于该
+增量范围。三者分别使用 rig 的原生 Provider Client，以保留其请求线格式修正和响应类型；
+不得把具名 Provider 简化为仅替换 endpoint 的 `openai-compatible`，否则会绕过 rig 已知的
+Provider 差异。
+
+三者都要求 Bearer credential。未显式配置 endpoint 时使用 rig 对应 Provider 的默认全局
+地址；中国区或其他兼容地址由调用方通过显式 endpoint 选择，并继续经过通用 URL 与宿主
+EndpointPolicy 校验。本阶段不为三个具名 Provider 开放任何专属 `provider_options` 或请求
+扩展字段，非空配置和具名命名空间下的未知扩展必须在发送前拒绝。`stop`、`seed`、
+ToolChoice 和 OutputFormat 等已经进入公共协议的字段仍通过 OpenAI-compatible wire mapper
+转换，不能重复放入 Provider 扩展。
+
+具名 Provider 使用固定且保守的能力预设：
+
+| Provider | ToolChoice | OutputFormat | 其他 |
+| --- | --- | --- | --- |
+| `deepseek` | `auto`、`none` | JSON Object | Tool Calling、并行 ToolCall、System；不支持 Developer |
+| `minimax` | `auto`、`none`、`required`、`specific` | JSON Object、JSON Schema | Tool Calling、并行 ToolCall、System；不支持 Developer |
+| `moonshot` | `auto`、`none` | JSON Object | Tool Calling、并行 ToolCall、System；不支持 Developer |
+
+DeepSeek 在未显式关闭 thinking 时会抑制强制 ToolChoice；本阶段未开放该 Provider 参数，因而
+必须在本地拒绝 `required` 和 `specific`。Moonshot 的 rig 路径会把 `required` 改写为
+`auto` 并注入提示消息、对 `specific` 返回 Provider 错误；Armillae 不接受这种语义降级，
+必须在能力预检阶段拒绝两者。DeepSeek 和 Moonshot 的 rig profile 都不支持 JSON Schema
+response format，Adapter 只声明 JSON Object。所有 P4 Provider 仍声明 `streaming = false`。
+
+MiniMax 和 Moonshot 的 OpenAI-compatible 响应复用 OpenAI raw response normalizer，但错误
+metadata 必须保留具名 Provider。DeepSeek 使用自身 raw response normalizer，保留其可选
+response ID/model、finish reason、system fingerprint、缓存 token usage 和 reasoning 内容；
+reasoning 继续按公共转换规则进入 `ProviderData { provider = "deepseek" }`，不得静默丢弃。
+三个 Provider 的 OpenAI-compatible ToolResult 都沿用本节记录的 `is_error` 省略策略。
+
 ### 9.3 转换边界
 
 转换代码必须集中在 `convert` 模块，并单独测试：
@@ -1224,11 +1258,13 @@ Provider 不支持时，不得因此拒绝 ToolResult，也不得擅自改写或
 
 ### 9.4 首批 Provider
 
-建议按以下顺序支持：
+第一阶段按以下顺序扩展 Provider：
 
 1. OpenAI 或 OpenAI-compatible：验证主协议和自定义 endpoint。
-2. Anthropic：验证原生 Tool 协议和消息差异。
-3. Ollama：验证本地 Provider 和 NDJSON 流式路径。
+2. MiniMax、Moonshot 和 DeepSeek 的 OpenAI-compatible 非流式路径：验证具名 Provider
+   路由、保守能力预检和 Provider-specific raw response 归一化。
+3. Anthropic：未来验证原生 Tool 协议和消息差异。
+4. Ollama：未来验证本地 Provider 和 NDJSON 流式路径。
 
 Provider 支持必须通过同一套 Bridge 合约测试，而不是分别定义不同的外部行为。
 

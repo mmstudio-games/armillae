@@ -31,6 +31,9 @@ fn create_bridge(config: ResolvedBridgeConfig) -> Result<Arc<dyn LlmBridge>, Bri
     }
 
     match config.provider.as_str() {
+        "deepseek" => providers::deepseek::create(config, credential),
+        "minimax" => providers::minimax::create(config, credential),
+        "moonshot" => providers::moonshot::create(config, credential),
         "openai" | "openai-compatible" => providers::openai::create(config, credential),
         provider => invalid_configuration(format!(
             "RigBridgeFactory does not support provider: {provider}"
@@ -99,5 +102,15 @@ mod tests {
             unsupported_provider,
             Err(BridgeError::InvalidConfiguration { .. })
         ));
+    }
+
+    #[test]
+    fn factory_routes_named_openai_compatible_providers() {
+        let factory = RigBridgeFactory;
+
+        for provider in ["deepseek", "minimax", "moonshot"] {
+            futures::executor::block_on(factory.create(resolved_config("rig", provider)))
+                .unwrap_or_else(|error| panic!("factory must route {provider}: {error}"));
+        }
     }
 }

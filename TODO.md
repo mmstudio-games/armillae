@@ -208,6 +208,24 @@
 - [x] 通过共享 Bridge 合约测试。
 - [x] 使用显式下游流程验证 `LLM -> ToolCall -> ToolResult -> LLM` 闭环。
 
+### DeepSeek/MiniMax/Moonshot OpenAI-compatible
+
+- [x] 为 `deepseek`、`minimax` 和 `moonshot` 增加具名 Factory 路由和独立私有 Provider 模块。
+- [x] 三者只实现 OpenAI-compatible 非流式 Completion，不接入 MiniMax/Moonshot 的
+      Anthropic-compatible 路径、Model Listing、Embedding、多模态或高级参数。
+- [x] 使用 rig 原生 Provider Client，支持默认全局 endpoint 和经过既有策略校验的显式
+      endpoint，并要求 Bearer credential。
+- [x] 为三个 Provider 拒绝非空 `provider_options` 和未知请求扩展，不借用 `openai.*`
+      命名空间表达具名 Provider 差异。
+- [x] 使用固定保守能力矩阵：DeepSeek/Moonshot 只允许 `auto`/`none` ToolChoice 和 JSON
+      Object；MiniMax 允许全部既有 ToolChoice、JSON Object 和 JSON Schema；三者都不声明
+      Developer role 或 Streaming。
+- [x] MiniMax/Moonshot 复用 OpenAI raw response normalizer并保留具名错误 metadata；DeepSeek
+      使用专用 raw response normalizer，保留可选 ID/model、finish reason、安全 metadata、
+      缓存 Usage 和 reasoning ProviderData。
+- [x] 覆盖配置、默认/自定义 endpoint、能力预检、文本与 ToolCall wire contract、共享 Bridge
+      合约和 Provider 错误分类。
+
 ## P5：Streaming
 
 ### 流式转换与重组
