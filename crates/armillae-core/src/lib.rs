@@ -12,5 +12,8 @@ pub use completion::{
 };
 pub use message::{ContentPart, Message, Role, TextContent};
 pub use stream::{CompletionEvent, ContentKind};
-pub use tool::{ToolCall, ToolChoice, ToolDefinition, ToolResult, ToolResultContent};
+pub use tool::{
+    InvalidToolCallId, ToolCall, ToolCallId, ToolChoice, ToolDefinition, ToolResult,
+    ToolResultContent,
+};
 pub use usage::TokenUsage;

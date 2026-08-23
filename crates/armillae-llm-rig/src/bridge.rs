@@ -184,7 +184,7 @@ mod tests {
             Ok(NormalizedResponseFacts {
                 id: Some("response-1".to_owned()),
                 model: Some("probe-model".to_owned()),
-                finish_reason: FinishReason::Stop,
+                finish_reason: Some(FinishReason::Stop),
                 provider_metadata: Value::Object(Default::default()),
             })
         }
@@ -229,7 +229,7 @@ mod tests {
                 id: Some("response-1".to_owned()),
                 model: Some("probe-model".to_owned()),
                 content: vec![AssistantContent::Text(TextContent::new("hello"))],
-                finish_reason: FinishReason::Stop,
+                finish_reason: Some(FinishReason::Stop),
                 usage: Some(TokenUsage {
                     input_tokens: Some(3),
                     output_tokens: Some(2),

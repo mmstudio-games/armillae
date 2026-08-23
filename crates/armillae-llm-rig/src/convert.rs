@@ -1,9 +1,9 @@
 use armillae_core::{
     AssistantContent as ArmillaeAssistantContent, CompletionRequest as ArmillaeCompletionRequest,
     ContentPart, GenerationOptions, Message as ArmillaeMessage, OutputFormat, ProviderData,
-    ProviderExtensions, Role, TextContent, TokenUsage, ToolChoice as ArmillaeToolChoice,
-    ToolDefinition as ArmillaeToolDefinition, ToolResult as ArmillaeToolResult,
-    ToolResultContent as ArmillaeToolResultContent,
+    ProviderExtensions, Role, TextContent, TokenUsage, ToolCallId,
+    ToolChoice as ArmillaeToolChoice, ToolDefinition as ArmillaeToolDefinition,
+    ToolResult as ArmillaeToolResult, ToolResultContent as ArmillaeToolResultContent,
 };
 use armillae_llm::BridgeError;
 use rig_core::{
@@ -166,7 +166,7 @@ fn assistant_content_to_rig(content: ContentPart) -> Result<RigAssistantContent,
     match content {
         ContentPart::Text(text) => Ok(RigAssistantContent::Text(RigText::new(text.text))),
         ContentPart::ToolCall(call) => Ok(RigAssistantContent::ToolCall(RigToolCall {
-            id: call.id,
+            id: call.id.into_inner(),
             call_id: None,
             function: ToolFunction::new(call.name, call.arguments),
             signature: None,
@@ -198,7 +198,7 @@ fn tool_result_to_rig(result: ArmillaeToolResult) -> Result<RigToolResult, Bridg
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(RigToolResult {
-        id: result.call_id,
+        id: result.call_id.into_inner(),
         call_id: None,
         content: one_or_many(content, "ToolResult must contain at least one content item")?,
     })
@@ -255,7 +255,7 @@ pub(crate) fn assistant_content_from_rig(
                 } = call;
                 converted.push(ArmillaeAssistantContent::ToolCall(
                     armillae_core::ToolCall {
-                        id,
+                        id: tool_call_id_from_rig(id, provider)?,
                         name: function.name,
                         arguments: function.arguments,
                     },
@@ -332,6 +332,13 @@ fn unsupported_request_provider_data<T>(data: ProviderData) -> Result<T, BridgeE
     })
 }
 
+fn tool_call_id_from_rig(id: String, provider: &str) -> Result<ToolCallId, BridgeError> {
+    ToolCallId::new(id).map_err(|_| BridgeError::InvalidProviderResponse {
+        message: "Provider returned an empty ToolCall ID".to_owned(),
+        metadata: armillae_llm::ErrorMetadata::new(provider),
+    })
+}
+
 fn one_or_many<T: Clone>(items: Vec<T>, message: &str) -> Result<OneOrMany<T>, BridgeError> {
     match items.len() {
         0 => invalid_request(message),
@@ -356,17 +363,21 @@ fn invalid_request<T>(message: impl Into<String>) -> Result<T, BridgeError> {
 mod tests {
     use armillae_core::{
         AssistantContent as ArmillaeAssistantContent, CompletionRequest, ContentPart,
-        GenerationOptions, Message, ProviderData, ProviderExtensions, Role, ToolCall, ToolResult,
-        ToolResultContent,
+        GenerationOptions, Message, ProviderData, ProviderExtensions, Role, ToolCall, ToolCallId,
+        ToolResult, ToolResultContent,
     };
     use armillae_llm::BridgeError;
     use rig_core::message::{
-        AssistantContent as RigAssistantContent, Message as RigMessage,
-        ToolResultContent as RigToolResultContent, UserContent as RigUserContent,
+        AssistantContent as RigAssistantContent, Message as RigMessage, ToolCall as RigToolCall,
+        ToolFunction, ToolResultContent as RigToolResultContent, UserContent as RigUserContent,
     };
     use serde_json::json;
 
     use super::{assistant_content_from_rig, merge_generation_options, request_parts};
+
+    fn tool_call_id(value: &str) -> ToolCallId {
+        ToolCallId::new(value).expect("fixture ToolCall IDs are non-empty")
+    }
 
     #[test]
     fn request_generation_values_override_defaults() {
@@ -410,12 +421,12 @@ mod tests {
             messages: vec![Message::assistant(vec![
                 ContentPart::text("checking"),
                 ContentPart::ToolCall(ToolCall {
-                    id: "call-1".to_owned(),
+                    id: tool_call_id("call-1"),
                     name: "weather".to_owned(),
                     arguments: json!({ "city": "上海" }),
                 }),
                 ContentPart::ToolCall(ToolCall {
-                    id: "call-2".to_owned(),
+                    id: tool_call_id("call-2"),
                     name: "clock".to_owned(),
                     arguments: json!({ "zone": "Asia/Shanghai" }),
                 }),
@@ -447,7 +458,7 @@ mod tests {
             messages: vec![Message::new(
                 Role::Tool,
                 vec![ContentPart::ToolResult(ToolResult {
-                    call_id: "call-1".to_owned(),
+                    call_id: tool_call_id("call-1"),
                     content: vec![
                         ToolResultContent::Text {
                             text: "lookup failed".to_owned(),
@@ -544,6 +555,26 @@ mod tests {
             &content[0],
             ArmillaeAssistantContent::ProviderData(data)
                 if data.provider == "openai" && data.kind == "reasoning"
+        ));
+    }
+
+    #[test]
+    fn empty_provider_tool_call_id_is_rejected() {
+        let result = assistant_content_from_rig(
+            rig_core::OneOrMany::one(RigAssistantContent::ToolCall(RigToolCall {
+                id: String::new(),
+                call_id: None,
+                function: ToolFunction::new("lookup".to_owned(), json!({ "query": "armillae" })),
+                signature: None,
+                additional_params: None,
+            })),
+            "openai",
+        );
+
+        assert!(matches!(
+            result,
+            Err(BridgeError::InvalidProviderResponse { metadata, .. })
+                if metadata.provider == "openai"
         ));
     }
 }

@@ -367,15 +367,19 @@ pub struct ToolDefinition {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct ToolCallId(String);
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ToolCall {
-    pub id: String,
+    pub id: ToolCallId,
     pub name: String,
     pub arguments: serde_json::Value,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ToolResult {
-    pub call_id: String,
+    pub call_id: ToolCallId,
     pub content: Vec<ToolResultContent>,
     pub is_error: bool,
 }
@@ -394,6 +398,12 @@ pub enum ToolChoice {
     Specific { name: String },
 }
 ```
+
+`ToolCallId` 是非空、透明序列化的字符串新类型，统一用于 `ToolCall.id`、
+`ToolResult.call_id` 和流式 ToolCall 事件。它在 JSON 和 Schema 中仍表示字符串，构造和
+反序列化必须拒绝空字符串，不得通过默认值制造无效 ID。Provider 返回可用 ToolCall ID 时，
+Adapter 必须原样保留；只有 Provider 确实没有提供 ID 时才允许生成本次消息历史内唯一的关联
+ID，且不得用生成值覆盖或冒充另一个 Provider 身份。
 
 `ToolCall.arguments` 在非流式响应和流式完成事件中必须是完整 JSON 值。只有流式增量事件允许暂时携带未完成的 JSON 字符串片段。
 
@@ -450,7 +460,7 @@ pub struct CompletionResponse {
     pub id: Option<String>,
     pub model: Option<String>,
     pub content: Vec<AssistantContent>,
-    pub finish_reason: FinishReason,
+    pub finish_reason: Option<FinishReason>,
     pub usage: Option<TokenUsage>,
     pub provider_metadata: serde_json::Value,
 }
@@ -480,6 +490,11 @@ pub struct TokenUsage {
     pub cached_input_tokens: Option<u64>,
 }
 ```
+
+`finish_reason = None` 表示 Provider 没有报告结束原因；
+`Some(FinishReason::Unknown(value))` 表示 Provider 明确报告了 Armillae 尚不认识的值。
+Adapter 不得根据响应内容推断或合成缺失的结束原因。JSON 反序列化时字段缺失或显式 `null`
+均映射为 `None`；序列化时保留 `finish_reason` 字段并以 `null` 表达 `None`，保持唯一的输出形态。
 
 响应不能退化为 `text + tool_calls` 两个字段，因为不同内容可能交错出现，且未来可能加入更多 Assistant 内容类型。
 
@@ -603,7 +618,7 @@ pub enum CompletionEvent {
     },
     ToolCallStarted {
         index: usize,
-        id: String,
+        id: ToolCallId,
         name: Option<String>,
     },
     ToolCallArgumentsDelta {
@@ -864,8 +879,9 @@ pub trait BridgeFactory: Send + Sync {
 `MockBridge` 是 Bridge 合约的一等实现，用于离线测试下游调度：
 
 ```rust
+let call_id = ToolCallId::new("call-1").expect("static mock ToolCall ID is non-empty");
 let bridge = MockBridge::scripted([
-    MockResponse::tool_call("call-1", "get_weather", json!({ "city": "上海" })),
+    MockResponse::tool_call(call_id, "get_weather", json!({ "city": "上海" })),
     MockResponse::text("上海今天有雨。"),
 ]);
 ```
@@ -1144,9 +1160,10 @@ rig 的通用 `CompletionResponse<T>` 只标准化 choice、usage 和 message ID
 `RigRequestMapper` 和 `RigResponseNormalizer` 是两个单向边界，不合并为同时负责请求、响应或
 传输的宽泛 Provider Codec。实际网络调用始终只由 rig `CompletionModel` 执行。
 
-不得根据“是否出现 ToolCall”等内容猜测 Provider 已明确返回的结束原因。Provider 返回未知
-结束值时转换为 `FinishReason::Unknown`；协议允许缺失的 ID/model 保持 `None`，协议要求存在
-但实际缺失时返回 `InvalidProviderResponse`。第一阶段 OpenAI Normalizer 读取 OpenAI raw
+不得根据“是否出现 ToolCall”等内容猜测 Provider 缺失或已明确返回的结束原因。Provider
+没有报告结束原因时保持 `None`，返回未知结束值时转换为
+`Some(FinishReason::Unknown(value))`；协议允许缺失的 ID/model 保持 `None`，协议要求存在但
+实际缺失时返回 `InvalidProviderResponse`。第一阶段 OpenAI Normalizer 读取 OpenAI raw
 response；后续 Provider 各自实现同一私有边界。
 
 rig 通用 Message 无法原样发出 Developer role 时，相应 Rig Adapter 必须声明
@@ -1266,7 +1283,8 @@ let final_response = bridge
 - Assistant 文本与 ToolCall 混合内容；
 - 多 ToolCall 顺序保持；
 - ToolCall/ToolResult ID 关联；
-- 未知 finish reason 和 ProviderData 的前向兼容；
+- `ToolCallId` 的非空约束与透明字符串线格式；
+- 缺失、未知 finish reason 和 ProviderData 的前向兼容；
 - JSON Schema 的合法性和稳定快照。
 
 ### 11.2 Tool Executor 测试

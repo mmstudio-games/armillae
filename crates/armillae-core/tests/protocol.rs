@@ -3,8 +3,8 @@ use std::collections::BTreeMap;
 use armillae_core::{
     AssistantContent, CompletionEvent, CompletionRequest, CompletionResponse, ContentKind,
     ContentPart, FinishReason, GenerationOptions, Message, OutputFormat, ProviderData,
-    ProviderExtensions, Role, TextContent, TokenUsage, ToolCall, ToolChoice, ToolDefinition,
-    ToolResult, ToolResultContent,
+    ProviderExtensions, Role, TextContent, TokenUsage, ToolCall, ToolCallId, ToolChoice,
+    ToolDefinition, ToolResult, ToolResultContent,
 };
 use schemars::JsonSchema;
 use serde::{Serialize, de::DeserializeOwned};
@@ -21,7 +21,7 @@ where
 
 fn sample_tool_call(id: &str, name: &str, arguments: Value) -> ToolCall {
     ToolCall {
-        id: id.to_owned(),
+        id: ToolCallId::new(id).expect("sample ToolCall IDs are non-empty"),
         name: name.to_owned(),
         arguments,
     }
@@ -49,7 +49,7 @@ fn sample_response() -> CompletionResponse {
                 value: json!({ "status": "complete", "future_field": [1, 2] }),
             }),
         ],
-        finish_reason: FinishReason::ToolCall,
+        finish_reason: Some(FinishReason::ToolCall),
         usage: Some(TokenUsage {
             input_tokens: Some(10),
             output_tokens: Some(5),
@@ -64,7 +64,7 @@ fn sample_response() -> CompletionResponse {
 fn public_protocol_types_round_trip() {
     let response = sample_response();
     let tool_result = ToolResult {
-        call_id: "call-weather".to_owned(),
+        call_id: ToolCallId::new("call-weather").expect("fixture ToolCall ID is non-empty"),
         content: vec![
             ToolResultContent::Text {
                 text: "rain".to_owned(),
@@ -232,7 +232,7 @@ fn streaming_events_round_trip_with_stable_indices_and_one_completion() {
     assert_eq!(encoded[2]["index"], 0);
     assert_eq!(encoded[3]["index"], 0);
     assert_eq!(encoded[4]["index"], 1);
-    assert_eq!(encoded[5]["id"], call.id);
+    assert_eq!(encoded[5]["id"], call.id.as_str());
     assert_eq!(encoded[7]["call"]["arguments"], call.arguments);
     assert_eq!(
         encoded
@@ -261,4 +261,49 @@ fn protocol_schema_is_valid_json_and_matches_snapshot() {
     let expected: Value = serde_json::from_str(include_str!("snapshots/protocol-schema.json"))
         .expect("checked-in protocol schema snapshot must be valid JSON");
     assert_eq!(actual, expected);
+}
+
+#[test]
+fn tool_call_id_is_a_transparent_non_empty_string() {
+    let id = ToolCallId::new("call-1").expect("fixture ToolCall ID is non-empty");
+    assert_eq!(
+        serde_json::to_value(&id).expect("ID must serialize"),
+        json!("call-1")
+    );
+    assert_eq!(
+        serde_json::from_value::<ToolCallId>(json!("call-1"))
+            .expect("non-empty ID must deserialize"),
+        id
+    );
+    assert!(ToolCallId::new("").is_err());
+    assert!(serde_json::from_value::<ToolCallId>(json!("")).is_err());
+}
+
+#[test]
+fn missing_and_null_finish_reason_are_distinct_from_unknown_values() {
+    let mut missing = serde_json::to_value(sample_response()).expect("response must serialize");
+    missing
+        .as_object_mut()
+        .expect("response serializes as an object")
+        .remove("finish_reason");
+    let missing: CompletionResponse =
+        serde_json::from_value(missing).expect("missing finish reason must deserialize");
+    assert_eq!(missing.finish_reason, None);
+
+    let mut null = serde_json::to_value(sample_response()).expect("response must serialize");
+    null["finish_reason"] = Value::Null;
+    let null: CompletionResponse =
+        serde_json::from_value(null).expect("null finish reason must deserialize");
+    assert_eq!(null.finish_reason, None);
+    assert_eq!(
+        serde_json::to_value(null).expect("response must serialize")["finish_reason"],
+        Value::Null
+    );
+
+    let mut unknown = sample_response();
+    unknown.finish_reason = Some(FinishReason::Unknown("future_reason".to_owned()));
+    assert_eq!(
+        serde_json::to_value(unknown).expect("response must serialize")["finish_reason"],
+        "future_reason"
+    );
 }

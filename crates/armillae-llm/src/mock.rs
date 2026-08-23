@@ -6,7 +6,7 @@ use std::{
 
 use armillae_core::{
     AssistantContent, CompletionEvent, CompletionRequest, CompletionResponse, ContentKind,
-    FinishReason, TextContent, ToolCall,
+    FinishReason, TextContent, ToolCall, ToolCallId,
 };
 use futures_util::stream;
 use serde_json::Value;
@@ -35,9 +35,9 @@ impl MockResponse {
         Self::Completion(text_response(text.into()))
     }
 
-    pub fn tool_call(id: impl Into<String>, name: impl Into<String>, arguments: Value) -> Self {
+    pub fn tool_call(id: ToolCallId, name: impl Into<String>, arguments: Value) -> Self {
         Self::Completion(tool_call_response(ToolCall {
-            id: id.into(),
+            id,
             name: name.into(),
             arguments,
         }))
@@ -82,7 +82,7 @@ impl MockResponse {
 
     /// Builds a valid ToolCall stream from arbitrary JSON argument fragments.
     pub fn tool_call_stream<I, S>(
-        id: impl Into<String>,
+        id: ToolCallId,
         name: impl Into<String>,
         argument_fragments: I,
     ) -> Result<Self, BridgeError>
@@ -90,7 +90,6 @@ impl MockResponse {
         I: IntoIterator<Item = S>,
         S: Into<String>,
     {
-        let id = id.into();
         let name = name.into();
         let fragments: Vec<String> = argument_fragments.into_iter().map(Into::into).collect();
         let arguments = serde_json::from_str(&fragments.concat()).map_err(|_| {
@@ -295,7 +294,7 @@ fn text_response(text: String) -> CompletionResponse {
         id: None,
         model: None,
         content: vec![AssistantContent::Text(TextContent::new(text))],
-        finish_reason: FinishReason::Stop,
+        finish_reason: Some(FinishReason::Stop),
         usage: None,
         provider_metadata: Value::Null,
     }
@@ -306,7 +305,7 @@ fn tool_call_response(call: ToolCall) -> CompletionResponse {
         id: None,
         model: None,
         content: vec![AssistantContent::ToolCall(call)],
-        finish_reason: FinishReason::ToolCall,
+        finish_reason: Some(FinishReason::ToolCall),
         usage: None,
         provider_metadata: Value::Null,
     }

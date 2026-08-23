@@ -194,13 +194,17 @@ fn invalid_request<T>(message: impl Into<String>) -> Result<T, BridgeError> {
 mod tests {
     use armillae_core::{
         CompletionRequest, ContentPart, GenerationOptions, Message, OutputFormat,
-        ProviderExtensions, Role, ToolResult, ToolResultContent,
+        ProviderExtensions, Role, ToolCallId, ToolResult, ToolResultContent,
     };
     use armillae_llm::BridgeError;
     use rig_core::{message::Message as RigMessage, providers::openai};
     use serde_json::{Value, json};
 
     use super::{OpenAiRequestMapper, RigRequestMapper};
+
+    fn tool_call_id(value: &str) -> ToolCallId {
+        ToolCallId::new(value).expect("fixture ToolCall IDs are non-empty")
+    }
 
     #[test]
     fn openai_mapper_preserves_generation_and_json_object_format() {
@@ -333,7 +337,7 @@ mod tests {
             messages: vec![Message::new(
                 Role::Tool,
                 vec![ContentPart::ToolResult(ToolResult {
-                    call_id: "call-1".to_owned(),
+                    call_id: tool_call_id("call-1"),
                     content: vec![ToolResultContent::Text {
                         text: "lookup failed".to_owned(),
                     }],

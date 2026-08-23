@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
 use armillae_core::{
-    AssistantContent, CompletionEvent, CompletionRequest, CompletionResponse, ContentKind, ToolCall,
+    AssistantContent, CompletionEvent, CompletionRequest, CompletionResponse, ContentKind,
+    ToolCall, ToolCallId,
 };
 use futures_util::StreamExt;
 use thiserror::Error;
@@ -177,7 +178,7 @@ pub fn validate_stream_events(
                         fragments,
                         completed,
                     } => {
-                        if completed.is_some() || id.as_deref() != Some(call.id.as_str()) {
+                        if completed.is_some() || id.as_ref() != Some(&call.id) {
                             return violation(
                                 "ToolCallCompleted must match one started ToolCall",
                                 Some(*index),
@@ -259,7 +260,7 @@ enum ObservedContent {
         text: String,
     },
     ToolCall {
-        id: Option<String>,
+        id: Option<ToolCallId>,
         name: Option<String>,
         fragments: String,
         completed: Option<ToolCall>,

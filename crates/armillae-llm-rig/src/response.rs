@@ -12,7 +12,7 @@ use crate::convert;
 pub(crate) struct NormalizedResponseFacts {
     pub(crate) id: Option<String>,
     pub(crate) model: Option<String>,
-    pub(crate) finish_reason: FinishReason,
+    pub(crate) finish_reason: Option<FinishReason>,
     pub(crate) provider_metadata: Value,
 }
 
@@ -74,7 +74,7 @@ impl RigResponseNormalizer<openai::completion::CompletionResponse> for OpenAiRes
         Ok(NormalizedResponseFacts {
             id: Some(raw_response.id.clone()),
             model: Some(raw_response.model.clone()),
-            finish_reason: openai_finish_reason(&choice.finish_reason),
+            finish_reason: Some(openai_finish_reason(&choice.finish_reason)),
             provider_metadata: Value::Object(metadata),
         })
     }
@@ -240,7 +240,7 @@ mod tests {
 
         assert_eq!(normalized.id.as_deref(), Some("chatcmpl-1"));
         assert_eq!(normalized.model.as_deref(), Some("gpt-test"));
-        assert_eq!(normalized.finish_reason, FinishReason::ToolCall);
+        assert_eq!(normalized.finish_reason, Some(FinishReason::ToolCall));
         assert_eq!(
             normalized.provider_metadata["system_fingerprint"],
             "fp-test"
@@ -262,7 +262,7 @@ mod tests {
 
         assert_eq!(
             facts.finish_reason,
-            FinishReason::Unknown("future_reason".to_owned())
+            Some(FinishReason::Unknown("future_reason".to_owned()))
         );
     }
 

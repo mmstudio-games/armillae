@@ -60,6 +60,8 @@
 
 - [x] 实现 `Message`、`Role`、`ContentPart` 和 `TextContent`。
 - [x] 实现 `ToolDefinition`、`ToolCall`、`ToolResult`、`ToolResultContent` 和 `ToolChoice`。
+- [x] 使用透明、非空的 `ToolCallId` 统一 `ToolCall`、`ToolResult` 与流式事件的调用关联，
+      保持字符串线格式和 Provider 已提供的调用 ID。
 - [x] 支持单个 Assistant Message 中交错出现文本和多个 ToolCall。
 - [x] 保持 `ContentPart`、多个 ToolCall 和 ToolResult 的原始顺序与调用 ID。
 - [x] 为预期扩展的公共枚举使用适当的 `#[non_exhaustive]` 兼容策略。
@@ -69,6 +71,7 @@
 - [x] 实现 `CompletionRequest`、`OutputFormat`、`GenerationOptions` 和 `ProviderExtensions`。
 - [ ] 使用命名空间隔离 Provider 扩展，并默认拒绝未知扩展。
 - [x] 实现 `CompletionResponse`、`AssistantContent`、`FinishReason` 和 `TokenUsage`。
+- [x] 允许 Provider 缺失 finish reason，并区分缺失值与明确返回的未知值，不根据内容推断。
 - [ ] 在 Adapter 转换中确保 `ProviderData` 不被用于绕过已有标准字段。
 - [x] 支持未知 finish reason 和 ProviderData 的前向兼容。
 

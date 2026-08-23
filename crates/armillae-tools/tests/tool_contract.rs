@@ -8,7 +8,7 @@ use std::{
     },
 };
 
-use armillae_core::{ToolCall, ToolResultContent};
+use armillae_core::{ToolCall, ToolCallId, ToolResultContent};
 use armillae_tools::{
     DynTool, IntoToolOutput, Tool, ToolContext, ToolExecutionError, ToolExecutor, ToolOutput,
     ToolRegistry, ToolRegistryError,
@@ -189,7 +189,7 @@ impl Tool for AddWithContext {
 
 fn call(id: &str, name: &str, arguments: serde_json::Value) -> ToolCall {
     ToolCall {
-        id: id.to_owned(),
+        id: ToolCallId::new(id).expect("fixture ToolCall IDs are non-empty"),
         name: name.to_owned(),
         arguments,
     }
@@ -266,7 +266,7 @@ fn explicit_tool_output_preserves_ordered_multi_content() {
     ))
     .expect("explicit ToolOutput must execute");
 
-    assert_eq!(result.call_id, "call-multi");
+    assert_eq!(result.call_id.as_str(), "call-multi");
     assert!(!result.is_error);
     assert_eq!(
         result.content,
@@ -412,7 +412,7 @@ fn context_extensions_are_type_safe_cloneable_and_host_only() {
         ),
     ))
     .expect("Tool must receive its host Context");
-    assert_eq!(result.call_id, "stable-call-id");
+    assert_eq!(result.call_id.as_str(), "stable-call-id");
     assert_eq!(
         result.content,
         [ToolResultContent::Json {

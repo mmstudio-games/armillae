@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use armillae_core::{
     CompletionRequest, CompletionResponse, ContentPart, FinishReason, Message, OutputFormat, Role,
-    ToolCall, ToolChoice, ToolDefinition, ToolResult,
+    ToolCall, ToolCallId, ToolChoice, ToolDefinition, ToolResult,
 };
 use armillae_llm::{
     BoxFuture, BridgeCapabilities, BridgeError, CompletionStream, ErrorMetadata, LlmBridge,
@@ -138,7 +138,7 @@ fn rejects_tools_and_tool_history_when_tool_calling_is_unsupported() {
 
     let with_tool_call = CompletionRequest {
         messages: vec![Message::assistant(vec![ContentPart::ToolCall(ToolCall {
-            id: "call-1".to_owned(),
+            id: tool_call_id("call-1"),
             name: "lookup".to_owned(),
             arguments: json!({"query": "armillae"}),
         })])],
@@ -151,7 +151,7 @@ fn rejects_tools_and_tool_history_when_tool_calling_is_unsupported() {
 
     let with_tool_result = CompletionRequest {
         messages: vec![Message::tool_result(ToolResult {
-            call_id: "call-1".to_owned(),
+            call_id: tool_call_id("call-1"),
             content: Vec::new(),
             is_error: false,
         })],
@@ -342,10 +342,14 @@ fn empty_response() -> CompletionResponse {
         id: None,
         model: None,
         content: Vec::new(),
-        finish_reason: FinishReason::Stop,
+        finish_reason: Some(FinishReason::Stop),
         usage: None,
         provider_metadata: Value::Null,
     }
+}
+
+fn tool_call_id(value: &str) -> ToolCallId {
+    ToolCallId::new(value).expect("fixture ToolCall IDs are non-empty")
 }
 
 fn tool_capabilities() -> BridgeCapabilities {

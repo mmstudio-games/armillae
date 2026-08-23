@@ -1,7 +1,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::{CompletionResponse, ProviderData, TokenUsage, ToolCall};
+use crate::{CompletionResponse, ProviderData, TokenUsage, ToolCall, ToolCallId};
 
 /// A semantic event in one streaming model response.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -22,7 +22,7 @@ pub enum CompletionEvent {
     },
     ToolCallStarted {
         index: usize,
-        id: String,
+        id: ToolCallId,
         name: Option<String>,
     },
     ToolCallArgumentsDelta {

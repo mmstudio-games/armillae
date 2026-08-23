@@ -142,7 +142,7 @@
           "type": "object",
           "properties": {
             "id": {
-              "type": "string"
+              "$ref": "#/$defs/ToolCallId"
             },
             "index": {
               "type": "integer",
@@ -339,7 +339,15 @@
           }
         },
         "finish_reason": {
-          "$ref": "#/$defs/FinishReason"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FinishReason"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The Provider-reported reason, or `None` when the Provider did not report one."
         },
         "id": {
           "type": [
@@ -367,7 +375,6 @@
       },
       "required": [
         "content",
-        "finish_reason",
         "provider_metadata"
       ]
     },
@@ -647,7 +654,7 @@
       "properties": {
         "arguments": true,
         "id": {
-          "type": "string"
+          "$ref": "#/$defs/ToolCallId"
         },
         "name": {
           "type": "string"
@@ -658,6 +665,11 @@
         "name",
         "arguments"
       ]
+    },
+    "ToolCallId": {
+      "description": "A non-empty identifier correlating a tool call with its result.",
+      "type": "string",
+      "minLength": 1
     },
     "ToolChoice": {
       "description": "The model's permitted tool-selection behavior.",
@@ -739,7 +751,7 @@
       "type": "object",
       "properties": {
         "call_id": {
-          "type": "string"
+          "$ref": "#/$defs/ToolCallId"
         },
         "content": {
           "type": "array",

@@ -4,7 +4,7 @@ use std::{sync::Arc, thread};
 
 use armillae_core::{
     AssistantContent, CompletionEvent, CompletionRequest, CompletionResponse, ContentKind,
-    ContentPart, FinishReason, Message, TextContent, ToolCall, ToolDefinition,
+    ContentPart, FinishReason, Message, TextContent, ToolCall, ToolCallId, ToolDefinition,
 };
 use armillae_llm::{
     BridgeCapabilities, BridgeError, ErrorMetadata, LlmBridge, MockBridge, MockResponse,
@@ -51,7 +51,11 @@ fn fixed_completion_repeats_and_records_requests() {
 fn scripted_completions_are_consumed_in_order_and_exhaust() {
     let bridge = MockBridge::scripted([
         MockResponse::text("first"),
-        MockResponse::tool_call("call-1", "lookup", json!({"query": "armillae"})),
+        MockResponse::tool_call(
+            tool_call_id("call-1"),
+            "lookup",
+            json!({"query": "armillae"}),
+        ),
     ]);
 
     let first = block_on(bridge.complete(CompletionRequest::default()))
@@ -69,7 +73,7 @@ fn scripted_completions_are_consumed_in_order_and_exhaust() {
     assert!(matches!(
         second.content.as_slice(),
         [AssistantContent::ToolCall(ToolCall { id, name, arguments })]
-            if id == "call-1"
+            if id.as_str() == "call-1"
                 && name == "lookup"
                 && arguments == &json!({"query": "armillae"})
     ));
@@ -145,9 +149,12 @@ fn text_stream_preserves_chunks_and_has_one_terminal_response() {
 
 #[test]
 fn tool_call_stream_preserves_arbitrary_argument_fragments() {
-    let response =
-        MockResponse::tool_call_stream("call-1", "lookup", ["{\"query", "\":\"Ar", "millae\"}"])
-            .expect("the argument fragments form valid JSON");
+    let response = MockResponse::tool_call_stream(
+        tool_call_id("call-1"),
+        "lookup",
+        ["{\"query", "\":\"Ar", "millae\"}"],
+    )
+    .expect("the argument fragments form valid JSON");
     let bridge = MockBridge::fixed(response);
     let events = collect_stream(&bridge);
 
@@ -166,7 +173,7 @@ fn tool_call_stream_preserves_arbitrary_argument_fragments() {
         CompletionEvent::ToolCallCompleted {
             index: 0,
             call: ToolCall { id, name, arguments },
-        } if id == "call-1"
+        } if id.as_str() == "call-1"
             && name == "lookup"
             && arguments == &json!({"query": "Armillae"})
     )));
@@ -175,7 +182,7 @@ fn tool_call_stream_preserves_arbitrary_argument_fragments() {
 #[test]
 fn invalid_tool_call_fragments_are_configuration_errors() {
     assert!(matches!(
-        MockResponse::tool_call_stream("call-1", "lookup", ["{invalid"]),
+        MockResponse::tool_call_stream(tool_call_id("call-1"), "lookup", ["{invalid"]),
         Err(BridgeError::InvalidConfiguration { .. })
     ));
 }
@@ -380,7 +387,7 @@ fn shared_contract_rejects_invalid_event_order_and_content() {
 #[test]
 fn shared_contract_reassembles_tool_call_fragments() {
     let expected_call = ToolCall {
-        id: "call-1".to_owned(),
+        id: tool_call_id("call-1"),
         name: "lookup".to_owned(),
         arguments: json!({"query": "Armillae"}),
     };
@@ -388,13 +395,17 @@ fn shared_contract_reassembles_tool_call_fragments() {
         id: None,
         model: None,
         content: vec![AssistantContent::ToolCall(expected_call)],
-        finish_reason: FinishReason::ToolCall,
+        finish_reason: Some(FinishReason::ToolCall),
         usage: None,
         provider_metadata: serde_json::Value::Null,
     };
     let bridge = MockBridge::fixed(
-        MockResponse::tool_call_stream("call-1", "lookup", ["{\"query\":", "\"Ar", "millae\"}"])
-            .expect("the fragments form valid JSON"),
+        MockResponse::tool_call_stream(
+            tool_call_id("call-1"),
+            "lookup",
+            ["{\"query\":", "\"Ar", "millae\"}"],
+        )
+        .expect("the fragments form valid JSON"),
     );
 
     block_on(verify_stream(
@@ -453,8 +464,12 @@ fn text_completion(text: &str) -> CompletionResponse {
         id: None,
         model: None,
         content: vec![AssistantContent::Text(TextContent::new(text))],
-        finish_reason: FinishReason::Stop,
+        finish_reason: Some(FinishReason::Stop),
         usage: None,
         provider_metadata: serde_json::Value::Null,
     }
+}
+
+fn tool_call_id(value: &str) -> ToolCallId {
+    ToolCallId::new(value).expect("fixture ToolCall IDs are non-empty")
 }

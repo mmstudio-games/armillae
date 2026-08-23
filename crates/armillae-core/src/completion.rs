@@ -58,7 +58,8 @@ pub struct CompletionResponse {
     pub id: Option<String>,
     pub model: Option<String>,
     pub content: Vec<AssistantContent>,
-    pub finish_reason: FinishReason,
+    /// The Provider-reported reason, or `None` when the Provider did not report one.
+    pub finish_reason: Option<FinishReason>,
     pub usage: Option<TokenUsage>,
     pub provider_metadata: Value,
 }

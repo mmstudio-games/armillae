@@ -131,7 +131,8 @@ fn invalid_configuration<T>(message: impl Into<String>) -> Result<T, BridgeError
 mod tests {
     use armillae_core::{
         AssistantContent, CompletionRequest, CompletionResponse, FinishReason, Message,
-        TextContent, TokenUsage, ToolChoice, ToolDefinition, ToolResult, ToolResultContent,
+        TextContent, TokenUsage, ToolCallId, ToolChoice, ToolDefinition, ToolResult,
+        ToolResultContent,
     };
     use armillae_llm::{
         BoxFuture, BridgeConfig, BridgeError, BridgeFactory, CredentialRef, SecretResolver,
@@ -141,6 +142,10 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::{RigBridgeFactory, create_openai_bridge, openai_capabilities, validate_config};
+
+    fn tool_call_id(value: &str) -> ToolCallId {
+        ToolCallId::new(value).expect("fixture ToolCall IDs are non-empty")
+    }
 
     struct StaticSecretResolver;
 
@@ -315,7 +320,7 @@ mod tests {
                 id: Some("chatcmpl-factory".to_owned()),
                 model: Some("compatible-model".to_owned()),
                 content: vec![AssistantContent::Text(TextContent::new("hello"))],
-                finish_reason: FinishReason::Stop,
+                finish_reason: Some(FinishReason::Stop),
                 usage: Some(TokenUsage {
                     input_tokens: Some(3),
                     output_tokens: Some(2),
@@ -473,7 +478,7 @@ mod tests {
                 .await
                 .expect("first model call must return tool calls");
 
-            assert_eq!(first.finish_reason, FinishReason::ToolCall);
+            assert_eq!(first.finish_reason, Some(FinishReason::ToolCall));
             assert_eq!(
                 first
                     .tool_calls()
@@ -511,14 +516,14 @@ mod tests {
                         user_message,
                         first.as_assistant_message(),
                         Message::tool_result(ToolResult {
-                            call_id: "call-weather".to_owned(),
+                            call_id: tool_call_id("call-weather"),
                             content: vec![ToolResultContent::Json {
                                 value: json!({ "condition": "rain" }),
                             }],
                             is_error: false,
                         }),
                         Message::tool_result(ToolResult {
-                            call_id: "call-clock".to_owned(),
+                            call_id: tool_call_id("call-clock"),
                             content: vec![ToolResultContent::Text {
                                 text: "10:30".to_owned(),
                             }],
@@ -531,7 +536,7 @@ mod tests {
                 .await
                 .expect("follow-up model call must accept explicit tool results");
 
-            assert_eq!(second.finish_reason, FinishReason::Stop);
+            assert_eq!(second.finish_reason, Some(FinishReason::Stop));
             assert!(matches!(
                 &second.content[0],
                 AssistantContent::Text(text) if text.text == "It is rainy and 10:30."
