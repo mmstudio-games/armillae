@@ -1,6 +1,6 @@
 [package]
 name = "armillae-llm"
-version = "0.1.0"
+version = "0.1.0-alpha.0"
 edition.workspace = true
 description = "Runtime-independent LLM Bridge contracts, configuration, and mocks for Armillae"
 license.workspace = true
@@ -15,7 +15,7 @@ categories = ["development-tools", "asynchronous"]
 mock = []
 
 [dependencies]
-armillae-core = { version = "0.1.0", path = "../armillae-core" }
+armillae-core = { version = "0.1.0-alpha.0", path = "../armillae-core" }
 futures-util = "0.3"
 secrecy = "0.10"
 serde = { version = "1", features = ["derive"] }

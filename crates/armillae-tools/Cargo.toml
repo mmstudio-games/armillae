@@ -1,6 +1,6 @@
 [package]
 name = "armillae-tools"
-version = "0.1.0"
+version = "0.1.0-alpha.0"
 edition.workspace = true
 description = "Type-safe Tool authoring, registration, and single-call execution for Armillae"
 license.workspace = true
@@ -12,7 +12,7 @@ keywords = ["llm", "tools", "tool-calling", "agent", "ai"]
 categories = ["development-tools"]
 
 [dependencies]
-armillae-core = { version = "0.1.0", path = "../armillae-core" }
+armillae-core = { version = "0.1.0-alpha.0", path = "../armillae-core" }
 futures-util = "0.3"
 schemars = { version = "1", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }

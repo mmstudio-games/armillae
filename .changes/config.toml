@@ -32,25 +32,21 @@ changeset-template = """
 path = "crates/armillae-core"
 resolver = "rust"
 channel = "alpha"
-channel-bump = "preserve"
 
 [packages.armillae-llm]
 path = "crates/armillae-llm"
 resolver = "rust"
 channel = "alpha"
-channel-bump = "preserve"
 
 [packages.armillae-llm-rig]
 path = "crates/armillae-llm-rig"
 resolver = "rust"
 channel = "alpha"
-channel-bump = "preserve"
 
 [packages.armillae-tools]
 path = "crates/armillae-tools"
 resolver = "rust"
 channel = "alpha"
-channel-bump = "preserve"
 
 [resolver.rust.pre-check]
 type = "http"
