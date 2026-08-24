@@ -2,6 +2,14 @@
 name = "armillae-llm-rig"
 version.workspace = true
 edition.workspace = true
+description = "Rig-backed LLM Provider adapters for Armillae"
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/armillae-llm-rig"
+readme.workspace = true
+keywords = ["llm", "rig", "provider", "tool-calling", "ai"]
+categories = ["api-bindings", "asynchronous"]
 
 [dependencies]
 armillae-core = { version = "0.1.0", path = "../armillae-core" }

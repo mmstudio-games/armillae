@@ -2,6 +2,14 @@
 name = "armillae-core"
 version.workspace = true
 edition.workspace = true
+description = "Provider-independent LLM and Tool protocols for Armillae"
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/armillae-core"
+readme.workspace = true
+keywords = ["llm", "tools", "protocol", "agent", "ai"]
+categories = ["development-tools"]
 
 [dependencies]
 schemars = { version = "1", features = ["derive"] }

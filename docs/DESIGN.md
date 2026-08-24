@@ -276,6 +276,17 @@ Cargo `version.workspace = true`，不得用于维护当前配置。
 第一阶段的发布约定为：
 
 - 使用 Rust workspace resolver 发现四个 crate；
+- 项目源代码和四个 crate 统一采用 SPDX 标识 `AGPL-3.0-only`，仓库根目录保存完整
+  `LICENSE` 正文；不得将其表述为“AGPL-3.0-or-later”；
+- 仓库根目录提供英文 `README.md`、中文 `README.zh.md` 和 `CONTRIBUTING.md`。发布到
+  registry 的 crate 必须提供准确的 description、license、repository、homepage、
+  documentation、readme、keywords 和 categories 等发现与合规元数据；crate README 可以
+  复用根 README，但打包后必须能够解析和展示；
+- 每个 crate 在进入发布流程前分别执行 `cargo publish --dry-run -p <package>`，检查 manifest
+  元数据、包内容、workspace path 依赖和构建结果；首次发布必须按内部依赖拓扑进行：在上游
+  crate 尚不存在于 registry 时，下游 dry-run 可以先完成打包与元数据检查，但完整依赖解析只能
+  在上游实际发布后重跑。不得为了让 dry-run 通过而在缺少明确授权时实际发布；dry-run 本身也
+  不构成实际发布授权；
 - base branch 为 `main`，release branch 为独立的 `release`；两者不得相同，避免 Semifold 将
   版本提交直接强推到 base branch，或尝试创建源分支与目标分支相同的 release PR；
 - 四个 crate 均使用 `alpha` 发布通道，首次进入通道时保留当前稳定版本基准，不额外执行

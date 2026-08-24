@@ -2,6 +2,14 @@
 name = "armillae-tools"
 version.workspace = true
 edition.workspace = true
+description = "Type-safe Tool authoring, registration, and single-call execution for Armillae"
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/armillae-tools"
+readme.workspace = true
+keywords = ["llm", "tools", "tool-calling", "agent", "ai"]
+categories = ["development-tools"]
 
 [dependencies]
 armillae-core = { version = "0.1.0", path = "../armillae-core" }

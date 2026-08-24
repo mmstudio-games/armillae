@@ -55,6 +55,11 @@
       branch，同时保持既有 PR status 与 version/publish workflow 不变。
 - [x] Semifold CD 必须在同一提交的 Rust CI 通过后运行，且标准 CI 不执行 ignored Live
       Provider 测试或注入 Provider 凭证。
+- [x] 添加英文/中文 README、贡献指南和完整 `AGPL-3.0-only` 许可证正文。
+- [x] 为四个 crate 补齐一致且可继承的发布元数据，并确保打包后的 README 路径有效。
+- [ ] 分别通过四个 crate 的 `cargo publish --dry-run`，且不执行实际发布或版本提升。
+      当前 `armillae-core` 已通过；其余 crate 已完成无元数据警告的打包阶段，完整验证等待
+      `armillae-core 0.1.0` 按授权发布到 registry 后依赖拓扑重跑。
 
 ### Message 与 Tool 协议
 

@@ -2,6 +2,14 @@
 name = "armillae-llm"
 version.workspace = true
 edition.workspace = true
+description = "Runtime-independent LLM Bridge contracts, configuration, and mocks for Armillae"
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/armillae-llm"
+readme.workspace = true
+keywords = ["llm", "bridge", "provider", "agent", "ai"]
+categories = ["development-tools", "asynchronous"]
 
 [features]
 mock = []
