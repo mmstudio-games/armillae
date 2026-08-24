@@ -278,12 +278,16 @@ Workspace 初始化阶段只添加上述 crate 之间的本地 path 依赖。外
 ### 5.3 版本与发布
 
 Workspace 使用 Semifold 管理 changeset、crate 版本和发布流程，配置保存在
-`.changes/config.toml`。初始化工具基线为 Semifold 0.3.0；0.2.5 不能解析本 workspace 使用的
-Cargo `version.workspace = true`，不得用于维护当前配置。
+`.changes/config.toml`。初始化工具基线为 Semifold 0.3.0。四个 crate 分别在自己的 manifest
+中声明精确 package version，不从 `[workspace.package]` 继承版本；Semifold 按 package 独立
+计算和写入版本，并同步更新依赖方 manifest 中的内部 crate 版本要求。共享的 edition、license、
+repository、homepage 和 readme 等非版本元数据继续从 workspace 继承。
 
 第一阶段的发布约定为：
 
 - 使用 Rust workspace resolver 发现四个 crate；
+- 四个 crate 独立锁定和演进 package version；根 manifest 不定义统一 workspace version，
+  不因任一 crate 发布而无条件提升其它 crate；
 - 项目源代码和四个 crate 统一采用 SPDX 标识 `AGPL-3.0-only`，仓库根目录保存完整
   `LICENSE` 正文；不得将其表述为“AGPL-3.0-or-later”；
 - 仓库根目录提供英文 `README.md`、中文 `README.zh.md` 和 `CONTRIBUTING.md`。发布到

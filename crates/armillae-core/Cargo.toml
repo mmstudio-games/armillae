@@ -1,6 +1,6 @@
 [package]
 name = "armillae-core"
-version.workspace = true
+version = "0.1.0"
 edition.workspace = true
 description = "Provider-independent LLM and Tool protocols for Armillae"
 license.workspace = true

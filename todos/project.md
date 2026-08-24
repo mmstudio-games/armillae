@@ -16,6 +16,7 @@
 
 ## Crate 发布准备
 
+- [x] 四个 crate 分别在自己的 manifest 中锁定 package version，不继承统一 workspace version。
 - [x] 为四个 crate 补齐一致且可继承的发布元数据，并确保打包后的 README 路径有效。
 - [ ] 分别通过四个 crate 的 `cargo publish --dry-run`，且不执行实际发布或版本提升。
       当前 `armillae-core` 已通过；其余 crate 已完成无元数据警告的打包阶段，完整验证等待
