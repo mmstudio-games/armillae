@@ -1,6 +1,6 @@
 [package]
 name = "armillae-llm-rig"
-version = "0.1.0"
+version = "0.1.0-alpha.0"
 edition.workspace = true
 description = "Rig-backed LLM Provider adapters for Armillae"
 license.workspace = true
@@ -12,8 +12,8 @@ keywords = ["llm", "rig", "provider", "tool-calling", "ai"]
 categories = ["api-bindings", "asynchronous"]
 
 [dependencies]
-armillae-core = { version = "0.1.0", path = "../armillae-core" }
-armillae-llm = { version = "0.1.0", path = "../armillae-llm" }
+armillae-core = { version = "0.1.0-alpha.0", path = "../armillae-core" }
+armillae-llm = { version = "0.1.0-alpha.0", path = "../armillae-llm" }
 futures-util = "0.3.34"
 rig-core = "=0.41.0"
 secrecy = "0.10"
