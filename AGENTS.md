@@ -5,18 +5,24 @@
 
 ## 1. 权威文档与实施清单
 
-- 第一阶段技术设计：[docs/DESIGN.md](docs/DESIGN.md)
-- 设计与实现差异清单：[TODO.md](TODO.md)
+- 生态设计入口：[docs/DESIGN.md](docs/DESIGN.md)
+- LLM Bridge 与 Tool Executor：[docs/LLM_BRIDGE.md](docs/LLM_BRIDGE.md)
+- Agentic 叙事运行时：[docs/AGENTIC_RUNTIME.md](docs/AGENTIC_RUNTIME.md)
+- 全项目实施清单索引：[TODO.md](TODO.md)
+- LLM Bridge 实施清单：[todos/llm-bridge.md](todos/llm-bridge.md)
+- 跨项目与发布清单：[todos/project.md](todos/project.md)
 
-`docs/DESIGN.md` 是第一阶段需求、架构、协议、安全边界和验收标准的技术事实来源。
-`TODO.md` 只记录设计与当前实现之间的差异，不是独立需求来源。
+`docs/DESIGN.md` 只负责设计索引、生态分层和跨子系统边界；具体需求、协议、安全边界与验收
+标准以索引指向的子系统设计为技术事实来源。根 `TODO.md` 只负责路由实施清单，`todos/*.md`
+分别记录已确认设计与当前实现之间的差异；它们都不是独立需求来源。
 
-- 开始实现前，先确认需求已经由 `docs/DESIGN.md` 表达。
-- 设计领先于代码时，在 `TODO.md` 中保留对应未完成项。
-- 只有代码和必要验证均已满足设计要求后，才能勾选对应 TODO。
-- 不得让 TODO、代码或测试与设计文档冲突。
-- 不得将未来阶段的设想直接当作第一阶段需求。Turn Runner、完整 Agent、Memory、RAG、
-  自动 Tool Loop 和多 ToolCall 调度策略等能力不属于当前实施范围。
+- 开始实现前，先从 `docs/DESIGN.md` 定位并确认对应子系统设计已经表达需求。
+- 设计领先于代码时，在 `todos/` 中对应实施清单保留未完成项；尚未冻结设计的子系统不得创建
+  实施任务。
+- 只有代码和必要验证均已满足设计要求后，才能勾选对应实施项。
+- 不得让实施清单、代码或测试与设计文档冲突。
+- Agentic 叙事运行时当前处于 Discovery；场景、领域模型和公共契约冻结前，不得将待决问题
+  直接实现为 crate、API、持久化 Schema、自动 Tool Loop、Memory 或调度策略。
 
 ## 2. 修改授权
 
@@ -29,11 +35,12 @@
 ## 3. 设计优先与同步顺序
 
 如果实现前或实现过程中出现新的架构决定、公共协议变化、Provider 兼容策略、安全边界、
-依赖选择或第一阶段范围变化，必须按以下顺序处理：
+依赖选择或范围变化，必须按以下顺序处理：
 
-1. 更新 `docs/DESIGN.md`；
-2. 更新 `TODO.md`；
-3. 修改代码、配置、测试和示例。
+1. 跨层变化先更新 `docs/DESIGN.md`；
+2. 更新受影响的子系统设计；
+3. 更新对应实施清单；
+4. 修改代码、配置、测试和示例。
 
 - 不得先实现技术方案变化，再补写设计文档。
 - 不得把重要设计决定只隐藏在代码、测试或依赖中。
@@ -41,7 +48,7 @@
 - 每次代码任务交付前，检查公共 API、配置契约、示例、安全说明和架构文档是否需要同步；
   若不需要更新文档，也必须在最终说明中明确原因。
 
-## 4. 第一阶段架构边界
+## 4. LLM Bridge 子系统架构边界
 
 - `LlmBridge` 只负责一次 Provider 无关的 Model Call，不执行 Tool，也不自动继续调用模型。
 - `ToolExecutor` 只负责一次 `ToolCall -> ToolResult`，不持有或调用 Bridge。
@@ -75,8 +82,8 @@
   Cargo CLI，例如 `cargo add`、`cargo remove`、`cargo new` 或 `cargo init`。
 - 不得使用文本补丁、脚本或重定向绕过 Cargo CLI。
 - 如果 Cargo CLI 无法表达所需变更、命令失败或预期结果不明确，立即停止并向用户确认。
-- 执行 Cargo CLI 后必须检查 manifest、lockfile 和 workspace 的实际变化，确认其符合
-  `docs/DESIGN.md` 和任务授权。
+- 执行 Cargo CLI 后必须检查 manifest、lockfile 和 workspace 的实际变化，确认其符合设计
+  索引、相关子系统设计和任务授权。
 - `rig-core` 必须使用经过 P0 Spike 验证的精确版本；升级前先通过转换与 Bridge 合约测试
   验证兼容性，不得仅依据 latest 文档升级。
 - 当前受限环境中新增依赖需要网络时，应直接请求以受审批方式运行限定到目标 package 的
@@ -121,7 +128,7 @@
 每次完成任务时，最终回复除总结业务和技术产出外，还必须明确说明本次技术方案相对于任务
 开始时既有设计发生了什么变化。
 
-- 如果技术方案发生变化，说明变化内容、原因、影响，以及如何同步到 `docs/DESIGN.md` 和
-  `TODO.md`。
+- 如果技术方案发生变化，说明变化内容、原因、影响，以及如何同步到设计索引、相关子系统
+  设计和实施清单。
 - 如果技术方案没有变化，明确写明“本次技术方案相对既有设计无变动”。
 - 列出实际完成的验证，以及任何尚未完成、被阻塞或需要用户决定的事项。

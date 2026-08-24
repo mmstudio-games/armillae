@@ -2,13 +2,13 @@
 
 [简体中文](https://github.com/mmstudio-games/armillae/blob/main/README.zh.md)
 
-Armillae is a Rust foundation for provider-independent LLM calls and type-safe Tool execution.
-It is being built for agentic narrative systems, TRPG runtimes, and world simulation engines,
-while keeping its first phase deliberately small and composable.
+Armillae is a layered Rust ecosystem for agentic narrative systems, TRPG runtimes, and world
+simulation engines. Its implemented foundation provides provider-independent LLM calls and
+type-safe Tool execution; its next design focus is the Agentic narrative runtime above them.
 
 ## Status
 
-Armillae is alpha software. The first phase currently provides:
+Armillae is alpha software. The implemented LLM foundation currently provides:
 
 - provider-independent message, completion, Tool, usage, and streaming protocols;
 - a runtime-independent `LlmBridge` for exactly one model call;
@@ -17,9 +17,10 @@ Armillae is alpha software. The first phase currently provides:
 - Rig adapters for OpenAI, generic OpenAI-compatible endpoints, DeepSeek, MiniMax, and Moonshot;
 - non-streaming and streaming text and ToolCall support for the implemented providers.
 
-Anthropic and Ollama adapters, observability, examples, and the remaining release documentation
-are still planned for the first phase. Turn runners, automatic Tool loops, agents, memory,
-embeddings, vector stores, and RAG are intentionally outside the current scope.
+This is the OpenAI-protocol baseline for mainstream compatible Providers. A formal full-support
+claim remains gated on an explicit end-to-end Provider/model scenario matrix. Anthropic, Ollama,
+and other Bridge expansion work is paused while the Agentic narrative runtime is designed as an
+independent upper layer.
 
 ## Crates
 
@@ -47,8 +48,9 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps --lock
 
 Live Provider tests are ignored by default and must only be run with explicitly supplied test
 credentials. See [CONTRIBUTING.md](https://github.com/mmstudio-games/armillae/blob/main/CONTRIBUTING.md)
-before making changes and [docs/DESIGN.md](https://github.com/mmstudio-games/armillae/blob/main/docs/DESIGN.md)
-for the authoritative first-phase design.
+before making changes and use
+[docs/DESIGN.md](https://github.com/mmstudio-games/armillae/blob/main/docs/DESIGN.md) to locate the
+authoritative subsystem design.
 
 ## License
 

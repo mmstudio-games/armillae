@@ -2,13 +2,13 @@
 
 [English](https://github.com/mmstudio-games/armillae/blob/main/README.md)
 
-Armillae 是一个使用 Rust 构建的 Provider 无关 LLM 调用与类型安全 Tool 执行基础设施。它面向
-Agentic 叙事系统、TRPG 运行时和大世界模拟引擎，同时将第一阶段保持为小而清晰、可自由组合的
-底层能力。
+Armillae 是一个面向 Agentic 叙事系统、TRPG 运行时和大世界模拟引擎的分层 Rust 生态。当前已
+实现的底层能力提供 Provider 无关 LLM 调用与类型安全 Tool 执行，下一阶段的设计重心是位于其上
+且独立演进的 Agentic 叙事运行时。
 
 ## 当前状态
 
-Armillae 目前处于 alpha 阶段。第一阶段已经提供：
+Armillae 目前处于 alpha 阶段。已经实现的 LLM 基础设施提供：
 
 - Provider 无关的消息、Completion、Tool、Usage 与 Streaming 协议；
 - 一次只执行一个 Model Call、且不依赖具体异步运行时的 `LlmBridge`；
@@ -17,9 +17,9 @@ Armillae 目前处于 alpha 阶段。第一阶段已经提供：
 - OpenAI、通用 OpenAI-compatible、DeepSeek、MiniMax 和 Moonshot 的 Rig Adapter；
 - 上述已实现 Provider 的非流式及流式文本和 ToolCall 支持。
 
-Anthropic、Ollama Adapter、可观测性、示例和剩余发布文档仍属于第一阶段待完成工作。Turn
-Runner、自动 Tool Loop、完整 Agent、Memory、Embedding、Vector Store 与 RAG 明确不属于当前
-范围。
+这构成面向主流兼容 Provider 的 OpenAI 协议基线；正式宣称全量支持前，仍需通过明确的
+Provider/模型端到端场景矩阵。Anthropic、Ollama 和其它 Bridge 扩展工作暂时搁置，项目转向设计
+独立上层的 Agentic 叙事运行时。
 
 ## Crate
 
@@ -46,8 +46,9 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps --lock
 ```
 
 Live Provider 测试默认 ignored，只有在明确提供测试凭证时才可运行。修改前请阅读
-[CONTRIBUTING.md](https://github.com/mmstudio-games/armillae/blob/main/CONTRIBUTING.md)，第一阶段技术事实以
-[docs/DESIGN.md](https://github.com/mmstudio-games/armillae/blob/main/docs/DESIGN.md) 为准。
+[CONTRIBUTING.md](https://github.com/mmstudio-games/armillae/blob/main/CONTRIBUTING.md)，并从
+[docs/DESIGN.md](https://github.com/mmstudio-games/armillae/blob/main/docs/DESIGN.md) 定位对应的权威
+子系统设计。
 
 ## 许可证
 

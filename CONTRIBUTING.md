@@ -4,21 +4,23 @@ Thank you for contributing to Armillae.
 
 ## Design and scope
 
-Read [docs/DESIGN.md](docs/DESIGN.md) before proposing or implementing a change. It is the
-authoritative source for the first-phase architecture, protocols, security boundaries, and
-acceptance criteria. [TODO.md](TODO.md) only tracks differences between that design and the current
-implementation.
+Read [docs/DESIGN.md](docs/DESIGN.md) before proposing or implementing a change. It routes changes
+to the authoritative subsystem design. LLM Bridge work is governed by
+[docs/LLM_BRIDGE.md](docs/LLM_BRIDGE.md); Agentic runtime discovery is governed by
+[docs/AGENTIC_RUNTIME.md](docs/AGENTIC_RUNTIME.md). [TODO.md](TODO.md) is the project-wide checklist
+index; detailed implementation differences live in subsystem files under `todos/`.
 
 When a change introduces an architectural decision, public protocol change, Provider compatibility
 policy, security boundary, dependency choice, or scope change, update files in this order:
 
-1. `docs/DESIGN.md`;
-2. `TODO.md`;
-3. code, configuration, tests, and examples.
+1. `docs/DESIGN.md` for cross-layer changes;
+2. the affected subsystem design;
+3. the corresponding `todos/*.md` implementation checklist;
+4. code, configuration, tests, and examples.
 
-Do not add first-phase support for Turn runners, automatic Tool loops, complete agents, memory,
-embeddings, vector stores, RAG, or multi-ToolCall scheduling. Keep Rig types inside
-`armillae-llm-rig`.
+The Agentic runtime is in discovery. Do not create runtime crates, APIs, persistence schemas,
+automatic Tool loops, memory, or scheduling behavior before its scenarios and contracts are
+confirmed. Keep Rig types inside `armillae-llm-rig`.
 
 ## Rust changes
 
