@@ -4,19 +4,21 @@ Thank you for contributing to Armillae.
 
 ## Design and scope
 
-Read [docs/DESIGN.md](docs/DESIGN.md) before proposing or implementing a change. It routes changes
-to the authoritative subsystem design. LLM Bridge work is governed by
-[docs/LLM_BRIDGE.md](docs/LLM_BRIDGE.md); Agentic runtime discovery is governed by
-[docs/AGENTIC_RUNTIME.md](docs/AGENTIC_RUNTIME.md). [TODO.md](TODO.md) is the project-wide checklist
-index; detailed implementation differences live in subsystem files under `todos/`.
+Read [.agents/DESIGN.md](.agents/DESIGN.md) before proposing or implementing a change. It routes
+changes to an active specification or an accepted RFC. LLM Bridge work is governed by
+[.agents/specs/llm-bridge.md](.agents/specs/llm-bridge.md); Agentic runtime discovery is governed by
+[RFC 0001](.agents/rfcs/0001-agentic-runtime.md). [.agents/TODO.md](.agents/TODO.md) is the
+project-wide checklist index; detailed implementation differences live under `.agents/todos/`.
+User-facing installation, concepts, guides, and API documentation belong under `docs/`.
 
 When a change introduces an architectural decision, public protocol change, Provider compatibility
 policy, security boundary, dependency choice, or scope change, update files in this order:
 
-1. `docs/DESIGN.md` for cross-layer changes;
-2. the affected subsystem design;
-3. the corresponding `todos/*.md` implementation checklist;
-4. code, configuration, tests, and examples.
+1. `.agents/DESIGN.md` for cross-layer changes;
+2. a draft RFC for unresolved decisions, followed by any affected active specification after the
+   RFC is accepted;
+3. the corresponding `.agents/todos/*.md` implementation checklist;
+4. code, configuration, tests, examples, and affected user documentation.
 
 The Agentic runtime is in discovery. Do not create runtime crates, APIs, persistence schemas,
 automatic Tool loops, memory, or scheduling behavior before its scenarios and contracts are

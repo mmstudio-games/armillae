@@ -48,9 +48,7 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps --lock
 
 Live Provider tests are ignored by default and must only be run with explicitly supplied test
 credentials. See [CONTRIBUTING.md](https://github.com/mmstudio-games/armillae/blob/main/CONTRIBUTING.md)
-before making changes and use
-[docs/DESIGN.md](https://github.com/mmstudio-games/armillae/blob/main/docs/DESIGN.md) to locate the
-authoritative subsystem design.
+before making changes. Engineering specifications and RFCs are linked from the contribution guide.
 
 ## License
 

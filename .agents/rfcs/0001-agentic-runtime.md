@@ -1,9 +1,13 @@
-# Armillae Agentic 叙事运行时设计
+# RFC 0001：Armillae Agentic 叙事运行时
 
-> 状态：Discovery，尚未冻结实施方案
-> 更新日期：2026-08-24
-> 设计入口：[Armillae 设计索引](DESIGN.md)
-> 下层能力边界：[LLM Bridge 与 Tool Executor](LLM_BRIDGE.md)
+> 状态：Draft
+> 更新日期：2026-08-25
+> 设计入口：[Armillae 设计索引](../DESIGN.md)
+> 下层能力边界：[LLM Bridge 与 Tool Executor Spec](../specs/llm-bridge.md)
+
+本 RFC 处于 Discovery 阶段，尚未冻结实施方案。它记录待确认的问题、候选边界和设计工作流；
+在状态变为 Accepted 或 Active 前，不构成实现授权。状态含义与推进规则见
+[RFC 工作流](README.md)。
 
 ## 1. 已确认方向
 

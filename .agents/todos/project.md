@@ -1,18 +1,19 @@
 # 项目与发布实施清单
 
 > 状态：Active
-> 技术事实来源：[Armillae 设计索引](../docs/DESIGN.md)与
-> [LLM Bridge 发布设计](../docs/LLM_BRIDGE.md#53-版本与发布)
-> 最后核对：2026-08-24
+> 技术事实来源：[Armillae 设计索引](../DESIGN.md)与
+> [LLM Bridge 发布规范](../specs/llm-bridge.md#53-版本与发布)
+> 最后核对：2026-08-25
 
 本清单记录跨子系统的文档、仓库治理、版本与发布差异，不承载子系统内部功能需求。
 
 ## 开源与文档
 
 - [x] 添加英文/中文 README、贡献指南和完整 `AGPL-3.0-only` 许可证正文。
-- [x] 将 `docs/DESIGN.md` 调整为生态入口，并拆分 LLM Bridge 与 Agentic 运行时设计。
-- [x] 将根 `TODO.md` 调整为索引，按子系统拆分实施清单。
-- [x] 同步设计索引、子系统设计、实施清单、README、贡献指南和当前实现的链接与范围。
+- [x] 将 `.agents/DESIGN.md` 调整为生态入口，并将已生效规范与待决 RFC 分离。
+- [x] 将 `.agents/TODO.md` 调整为索引，按子系统拆分实施清单。
+- [x] 将 Agent 工程文档迁入 `.agents/`，为 `docs/` 保留面向使用者的文档职责。
+- [x] 同步设计索引、Spec、RFC、实施清单、README、贡献指南和当前实现的链接与范围。
 
 ## Crate 发布准备
 

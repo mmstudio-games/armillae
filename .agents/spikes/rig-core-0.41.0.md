@@ -1,7 +1,7 @@
 # rig-core 0.41.0 P0 可行性 Spike
 
-> 日期：2026-08-15  
-> 结论：通过  
+> 日期：2026-08-15
+> 结论：通过
 > 依赖：`rig-core = "=0.41.0"`
 
 ## 目标
@@ -57,7 +57,7 @@ LLM Bridge 与 Tool Calling 设计。Spike 只验证 Adapter 所需的底层能�
 第一阶段采用并精确锁定 `rig-core 0.41.0`，继续保持其只存在于
 `armillae-llm-rig`。当前没有启用 `genai` 或原生 Provider Adapter 的必要。若升级 Rig、
 转换合约不再成立或 Provider 能力无法无损表达，应先复跑本 Spike 和共享 Bridge 合约；失败
-时再按设计顺序更新 `docs/DESIGN.md` 与 `docs/LLM_BRIDGE.md`，评估替代 Adapter。
+时再按设计顺序更新 `.agents/DESIGN.md` 与 `.agents/specs/llm-bridge.md`，评估替代 Adapter。
 
 测试证据位于 `crates/armillae-llm-rig/tests/p0_spike.rs`，运行方式：
 

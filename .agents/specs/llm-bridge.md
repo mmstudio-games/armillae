@@ -1,10 +1,10 @@
-# Armillae LLM Bridge 与 Tool Executor 技术设计
+# Armillae LLM Bridge 与 Tool Executor 规范
 
-> 状态：OpenAI 协议基线维护中；全量支持声明等待端到端场景验证
-> 设计基线：2026-08-13
+> 状态：Active Spec；OpenAI 协议基线维护中；全量支持声明等待端到端场景验证
+> 规范基线：2026-08-13
 > 适用范围：`armillae-core`、`armillae-llm`、`armillae-tools`、`armillae-llm-rig`
-> 设计入口：[Armillae 设计索引](DESIGN.md)
-> 后续方向：[Agentic 叙事运行时设计](AGENTIC_RUNTIME.md)
+> 设计入口：[Armillae 设计索引](../DESIGN.md)
+> 后续方向：[RFC 0001：Agentic 叙事运行时](../rfcs/0001-agentic-runtime.md)
 
 本文保留第一阶段设计基线、协议决策和验收证据。当前只补充 OpenAI 协议端到端场景验证；
 Anthropic、Ollama、可观测性及其它 Provider 扩展暂停，不再与 Agentic 运行时设计混写。
@@ -43,7 +43,7 @@ LLM Bridge ───────────────► LLM
 
 Agentic 叙事运行时可以在这些能力之上组织 Turn 或其它执行模型，但运行时设计不得反向改变本
 文冻结的一次 Model Call 与一次 Tool Execution 边界。运行时的具体模型由
-[Agentic 叙事运行时设计](AGENTIC_RUNTIME.md) 单独管理。
+[RFC 0001：Agentic 叙事运行时](../rfcs/0001-agentic-runtime.md) 单独管理。
 
 长期的检索与知识增强能力按独立职责演进：`armillae-embedding` 提供 Provider 无关的
 Embedding Bridge，`armillae-vector-store` 提供数据库无关的向量存储与检索接口，未来的
@@ -1490,7 +1490,7 @@ Provider 已经停止计算；OpenAI 的后续 ToolCall delta 可能不重复外
 内部关联 ID 分组；Anthropic 使用 `tool_use`/`tool_result` content block，且请求要求
 `max_tokens`。这些差异由后续 Armillae 协议、取消语义和 Provider Adapter 显式吸收，不改变
 Bridge 一次只执行一个 Model Call 的边界。完整测试证据和限制记录见
-[rig-core 0.41.0 P0 Spike](spikes/rig-core-0.41.0.md)。
+[rig-core 0.41.0 P0 Spike](../spikes/rig-core-0.41.0.md)。
 
 ### P1：`armillae-core`
 
@@ -1582,7 +1582,8 @@ Store、RAG 和调度策略；多模态和插件机制在有明确需求后扩�
 ## 16. 与 Agentic 叙事运行时的边界
 
 Agentic 叙事运行时、Turn、Memory、世界状态、持久化、回放和 Agent 调度不再作为本文的
-“后续演进”展开，它们由 [Agentic 叙事运行时设计](AGENTIC_RUNTIME.md) 独立管理。
+“后续演进”展开，它们由 [RFC 0001：Agentic 叙事运行时](../rfcs/0001-agentic-runtime.md)
+独立管理。
 
 本文只冻结一个跨层不变量：上层运行时可以组合 `LlmBridge` 与 `ToolExecutor`，但 Bridge 不
 依赖运行时，Tool Executor 不持有 Bridge，任何一层都不得静默承担另一层的状态推进职责。

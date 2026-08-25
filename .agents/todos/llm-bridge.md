@@ -1,9 +1,9 @@
 # LLM Bridge 与 Tool Executor 实施清单
 
 > 状态：Maintenance；OpenAI 协议 E2E 门禁 Active，其它 Provider 扩展 Paused
-> 技术事实来源：[LLM Bridge 与 Tool Executor 设计](../docs/LLM_BRIDGE.md)
-> 设计入口：[Armillae 设计索引](../docs/DESIGN.md)
-> 最后核对：2026-08-24
+> 技术事实来源：[LLM Bridge 与 Tool Executor Spec](../specs/llm-bridge.md)
+> 设计入口：[Armillae 设计索引](../DESIGN.md)
+> 最后核对：2026-08-25
 
 本清单只记录 LLM Bridge 与 Tool Executor 设计和当前实现之间的差异。
 
@@ -339,11 +339,11 @@ Anthropic、Ollama、可观测性和其它 Bridge 完善项进入暂停队列。
 - [ ] MockBridge 和所有真实 Adapter 均通过共享合约测试。
 - [ ] 除 `armillae-llm-rig` 外没有 crate 依赖或暴露 rig 类型。
 - [ ] 格式检查、Clippy、单元测试、文档构建和离线合约测试全部通过。
-- [ ] `docs/LLM_BRIDGE.md`、本清单、示例和当前实现保持一致。
+- [ ] `.agents/specs/llm-bridge.md`、本清单、示例和当前实现保持一致。
 
 ## 当前不实施的生态方向
 
-以下方向不属于当前 Bridge 工作队列；后续必须先通过 [Armillae 设计索引](../docs/DESIGN.md)
+以下方向不属于当前 Bridge 工作队列；后续必须先通过 [Armillae 设计索引](../DESIGN.md)
 路由到对应子系统设计，不能直接在本清单中增加实现项：
 
 - Agentic 运行时：执行推进、多 ToolCall 调度、人工审批、副作用策略、Conversation Memory、

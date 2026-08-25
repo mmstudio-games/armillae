@@ -46,9 +46,8 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps --lock
 ```
 
 Live Provider 测试默认 ignored，只有在明确提供测试凭证时才可运行。修改前请阅读
-[CONTRIBUTING.md](https://github.com/mmstudio-games/armillae/blob/main/CONTRIBUTING.md)，并从
-[docs/DESIGN.md](https://github.com/mmstudio-games/armillae/blob/main/docs/DESIGN.md) 定位对应的权威
-子系统设计。
+[CONTRIBUTING.md](https://github.com/mmstudio-games/armillae/blob/main/CONTRIBUTING.md)，工程规范和
+RFC 由贡献指南统一引导。
 
 ## 许可证
 

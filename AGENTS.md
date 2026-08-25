@@ -5,22 +5,26 @@
 
 ## 1. 权威文档与实施清单
 
-- 生态设计入口：[docs/DESIGN.md](docs/DESIGN.md)
-- LLM Bridge 与 Tool Executor：[docs/LLM_BRIDGE.md](docs/LLM_BRIDGE.md)
-- Agentic 叙事运行时：[docs/AGENTIC_RUNTIME.md](docs/AGENTIC_RUNTIME.md)
-- 全项目实施清单索引：[TODO.md](TODO.md)
-- LLM Bridge 实施清单：[todos/llm-bridge.md](todos/llm-bridge.md)
-- 跨项目与发布清单：[todos/project.md](todos/project.md)
+- 生态设计入口：[.agents/DESIGN.md](.agents/DESIGN.md)
+- LLM Bridge 与 Tool Executor Active Spec：[.agents/specs/llm-bridge.md](.agents/specs/llm-bridge.md)
+- Agentic 叙事运行时 Draft RFC：[.agents/rfcs/0001-agentic-runtime.md](.agents/rfcs/0001-agentic-runtime.md)
+- RFC 工作流：[.agents/rfcs/README.md](.agents/rfcs/README.md)
+- 全项目实施清单索引：[.agents/TODO.md](.agents/TODO.md)
+- LLM Bridge 实施清单：[.agents/todos/llm-bridge.md](.agents/todos/llm-bridge.md)
+- 跨项目与发布清单：[.agents/todos/project.md](.agents/todos/project.md)
 
-`docs/DESIGN.md` 只负责设计索引、生态分层和跨子系统边界；具体需求、协议、安全边界与验收
-标准以索引指向的子系统设计为技术事实来源。根 `TODO.md` 只负责路由实施清单，`todos/*.md`
-分别记录已确认设计与当前实现之间的差异；它们都不是独立需求来源。
+`.agents/DESIGN.md` 只负责设计索引、生态分层和跨子系统边界；具体需求、协议、安全边界与
+验收标准以索引指向的 Active Spec 或已接受 RFC 为技术事实来源。`.agents/TODO.md` 只负责
+路由实施清单，`.agents/todos/*.md` 分别记录已确认设计与当前实现之间的差异；它们都不是
+独立需求来源。面向项目使用者的安装、概念、指南和 API 文档放在 `docs/`，不得用 Agent 工程
+文档代替用户文档。
 
-- 开始实现前，先从 `docs/DESIGN.md` 定位并确认对应子系统设计已经表达需求。
-- 设计领先于代码时，在 `todos/` 中对应实施清单保留未完成项；尚未冻结设计的子系统不得创建
-  实施任务。
-- 只有代码和必要验证均已满足设计要求后，才能勾选对应实施项。
-- 不得让实施清单、代码或测试与设计文档冲突。
+- 开始实现前，先从 `.agents/DESIGN.md` 定位并确认对应 Active Spec 或已接受 RFC 已经表达
+  需求。
+- 规范领先于代码时，在 `.agents/todos/` 中对应实施清单保留未完成项；尚未冻结的 Draft RFC
+  不得创建实施任务。
+- 只有代码和必要验证均已满足 Active Spec 或已接受 RFC 后，才能勾选对应实施项。
+- 不得让实施清单、代码或测试与 Active Spec 或已接受 RFC 冲突。
 - Agentic 叙事运行时当前处于 Discovery；场景、领域模型和公共契约冻结前，不得将待决问题
   直接实现为 crate、API、持久化 Schema、自动 Tool Loop、Memory 或调度策略。
 
@@ -37,12 +41,13 @@
 如果实现前或实现过程中出现新的架构决定、公共协议变化、Provider 兼容策略、安全边界、
 依赖选择或范围变化，必须按以下顺序处理：
 
-1. 跨层变化先更新 `docs/DESIGN.md`；
-2. 更新受影响的子系统设计；
-3. 更新对应实施清单；
-4. 修改代码、配置、测试和示例。
+1. 跨层变化先更新 `.agents/DESIGN.md`；
+2. 尚未确认的新决策先进入 RFC，并在接受后同步受影响的 Active Spec；
+3. 已确认的子系统契约变化更新对应 Active Spec；
+4. 更新 `.agents/todos/` 中的对应实施清单；
+5. 修改代码、配置、测试、示例和受影响的用户文档。
 
-- 不得先实现技术方案变化，再补写设计文档。
+- 不得先实现技术方案变化，再补写 Spec 或 RFC。
 - 不得把重要设计决定只隐藏在代码、测试或依赖中。
 - 如果变化方向或影响尚不明确，停止相关实现并向用户确认。
 - 每次代码任务交付前，检查公共 API、配置契约、示例、安全说明和架构文档是否需要同步；
@@ -83,7 +88,7 @@
 - 不得使用文本补丁、脚本或重定向绕过 Cargo CLI。
 - 如果 Cargo CLI 无法表达所需变更、命令失败或预期结果不明确，立即停止并向用户确认。
 - 执行 Cargo CLI 后必须检查 manifest、lockfile 和 workspace 的实际变化，确认其符合设计
-  索引、相关子系统设计和任务授权。
+  索引、相关 Active Spec、已接受 RFC 和任务授权。
 - `rig-core` 必须使用经过 P0 Spike 验证的精确版本；升级前先通过转换与 Bridge 合约测试
   验证兼容性，不得仅依据 latest 文档升级。
 - 当前受限环境中新增依赖需要网络时，应直接请求以受审批方式运行限定到目标 package 的
@@ -128,7 +133,7 @@
 每次完成任务时，最终回复除总结业务和技术产出外，还必须明确说明本次技术方案相对于任务
 开始时既有设计发生了什么变化。
 
-- 如果技术方案发生变化，说明变化内容、原因、影响，以及如何同步到设计索引、相关子系统
-  设计和实施清单。
+- 如果技术方案发生变化，说明变化内容、原因、影响，以及如何同步到设计索引、相关 Spec、
+  RFC 和实施清单。
 - 如果技术方案没有变化，明确写明“本次技术方案相对既有设计无变动”。
 - 列出实际完成的验证，以及任何尚未完成、被阻塞或需要用户决定的事项。
