@@ -1,7 +1,7 @@
 # Armillae 设计索引
 
 > 状态：Active
-> 更新日期：2026-08-25
+> 更新日期：2026-08-26
 > 作用：Armillae 生态的权威工程设计入口，不在本文件重复各子系统规范或 RFC
 
 本目录服务于项目设计、实施和 Agent 协作；面向使用者的安装、概念、指南与 API 文档统一放在
@@ -14,10 +14,12 @@ Armillae 面向 Agentic 叙事、TRPG 运行时和大世界游戏引擎提供分
 调用、Tool 执行、Agent 调度、叙事状态和世界状态压入同一个运行时；各层拥有独立协议、错误
 语义和演进节奏，通过明确的单向依赖组合。
 
-当前开发重心从继续扩展 LLM Provider 转向 Agentic 叙事运行时 RFC。LLM Bridge 已完成
-OpenAI 协议主流 Provider 的公共协议、非流式、流式和 Tool Calling 基线，但在完成端到端场景
-矩阵前，不宣称“全量支持所有 OpenAI 协议主流模型”。Anthropic、Ollama 及其它 Bridge 完善项
-进入暂停队列，不阻塞运行时设计。
+当前开发重心从继续扩展 LLM Provider 转向 Agentic 叙事基础设施。模拟推进、Clock、可替换
+ECS 后端和 Module 边界已经由 RFC 0002 收敛，并转入 `armillae-simulate` Active Spec；具体
+持久化模型及其 RFC 暂缓，不属于 `armillae-simulate` 的实现责任。LLM Bridge 已完成 OpenAI
+协议主流 Provider 的公共协议、非流式、流式和 Tool Calling 基线，但在完成端到端场景矩阵前，
+不宣称“全量支持所有 OpenAI 协议主流模型”。Anthropic、Ollama 及其它 Bridge 完善项进入暂停
+队列，不阻塞运行时设计。
 
 ## 2. 分层与依赖方向
 
@@ -25,16 +27,16 @@ OpenAI 协议主流 Provider 的公共协议、非流式、流式和 Tool Callin
 叙事应用 / TRPG / 世界引擎
               │
               ▼
-Agentic 叙事运行时                 设计中
+Agentic 叙事运行时                 Discovery
   ├── 生命周期与执行推进
-  ├── 叙事状态与世界状态边界
-  ├── 持久化、回放与副作用治理
-  └── Agent 行为与上下文组织
-              │ 可选能力依赖
-              ▼
-能力与基础设施层
-  ├── LlmBridge                    OpenAI 协议基线维护中
-  └── ToolExecutor                 单次执行边界已实现
+  ├── Agent 行为与上下文组织
+  ├── 组合：模拟基础设施            Active Spec；未实现
+  │     ├── armillae-simulate       后端中立的执行、Clock 与 Module 契约
+  │     └── armillae-simulate-bevy  首个 ECS 后端适配
+  ├── 组合：状态与持久化            RFC 暂缓；独立于 simulate
+  ├── 可选：LlmBridge              OpenAI 协议基线维护中
+  ├── 可选：ToolExecutor           单次执行边界已实现
+  └── 副作用治理
 ```
 
 依赖只能从上层指向下层。`LlmBridge` 仍只执行一次 Model Call，`ToolExecutor` 仍只执行一次
@@ -46,7 +48,9 @@ Agentic 叙事运行时                 设计中
 | 文档 | 类型与状态 | 权威范围 |
 |---|---|---|
 | [LLM Bridge 与 Tool Executor](specs/llm-bridge.md) | Active Spec | 公共消息与 Completion 协议、Bridge、Tool、Provider Adapter、Streaming、安全与合约测试 |
+| [Simulate](specs/simulate.md) | Active Spec | 公共 API 与 JSON 协议、显式执行与推进、Clock、Module、后端契约、Bevy-native API 和验收门禁 |
 | [RFC 0001：Agentic 叙事运行时](rfcs/0001-agentic-runtime.md) | Draft RFC | 运行时目标、分层边界、待冻结的领域模型与设计工作流 |
+| [RFC 0002：Simulate 与可替换 ECS 后端](rfcs/0002-simulate.md) | Accepted RFC | Simulate 命名、责任、推进所有权、Clock、Module 与可替换后端决策 |
 | [rig-core 0.41.0 Spike](spikes/rig-core-0.41.0.md) | Completed Spike | Rig 低层可行性证据、限制与锁定版本依据 |
 
 实现前必须先在本索引中找到对应的 Active Spec 或已接受 RFC，再从 [TODO 索引](TODO.md)
@@ -57,9 +61,13 @@ Agentic 叙事运行时                 设计中
 
 1. 为 OpenAI 协议支持定义并执行端到端场景矩阵，形成可审计的支持声明；该工作只验证既有
    Bridge，不继续扩大 Provider 范围。
-2. 完成 Agentic 叙事运行时 RFC 的场景、术语、状态所有权和生命周期设计。
-3. 冻结运行时与 LLM/Tool 等可选能力的依赖边界及端到端验收标准。
-4. RFC 接受后再建立运行时实施清单和 crate，不从待决问题直接推导代码。
+2. 按已冻结的 Simulate 公共契约完成 Bevy P0 Spike，再实现共享后端合约测试；在 Spike 编译
+   验证精确 Bevy 版本、Features 和错误边界前不创建产品 crate。
+3. 使用 Simulate 的已确认边界继续完成 Agentic 叙事运行时 RFC，不让运行时替用户决定 Agent、
+   Tool 或 Simulation Driver 的调度策略。
+4. 状态与持久化继续作为独立子系统保留，但在用户重新启动该方向前不创建 RFC、Spec、crate
+   或持久化 Schema。
+5. 冻结运行时与 LLM/Tool 等可选能力的依赖边界及端到端验收标准。
 
 ## 5. 变更规则
 

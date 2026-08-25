@@ -4,6 +4,8 @@
 > 更新日期：2026-08-25
 > 设计入口：[Armillae 设计索引](../DESIGN.md)
 > 下层能力边界：[LLM Bridge 与 Tool Executor Spec](../specs/llm-bridge.md)
+> 模拟基础设施：[RFC 0002：Simulate 与可替换 ECS 后端](0002-simulate.md)
+> 生效规范：[Armillae Simulate Spec](../specs/simulate.md)
 
 本 RFC 处于 Discovery 阶段，尚未冻结实施方案。它记录待确认的问题、候选边界和设计工作流；
 在状态变为 Accepted 或 Active 前，不构成实现授权。状态含义与推进规则见
@@ -24,6 +26,12 @@ Armillae 的长期目标是提供面向 Agentic 叙事的通用运行时，可�
 - 是否调用 LLM 以及如何处理多个 ToolCall，由运行时或其上层策略决定。
 
 当前阶段只整理场景和冻结设计，不授权创建运行时 crate 或实现功能。
+
+Simulation、ECS 工作世界、Clock、Module 和 Backend 边界由已接受的
+[RFC 0002](0002-simulate.md) 及其 [Active Spec](../specs/simulate.md) 承担。本 RFC 继续拥有
+Agent 生命周期、上下文、可选 LLM/Tool 组合与跨子系统副作用边界，不得让 Agent Harness
+反向决定 Simulate 的底层协议。权威状态与持久化属于未来独立子系统；当前不由 RFC 0001 或
+RFC 0002 提前定义。
 
 ## 2. 与 LLM Bridge 的关系
 
@@ -64,8 +72,9 @@ RAG 或工作流引擎的实现方式。
 
 1. 运行时最小执行单元是 Action、Step、Turn、Scene、Session 还是其它概念，各自生命周期如何
    组合？
-2. 叙事状态、世界状态、Agent 私有状态和派生上下文分别由谁拥有，哪些事实是权威状态？
-3. 状态采用快照、事件日志或组合模型时，提交、回滚、分支和重放语义是什么？
+2. 叙事状态、应用状态、Agent 私有状态和派生上下文分别由谁拥有；未来状态 RFC 应由哪个
+   子系统承接，而不把持久化塞入 Simulate？
+3. 未来状态子系统冻结提交、存档、分支和重放语义后，Agent 生命周期如何组合而不复制它们？
 4. 多 Agent 的推进、暂停、取消、优先级和公平性由哪一层负责？
 5. Tool 与外部系统副作用如何审批、幂等、重试、补偿和审计？
 6. LLM 不可用、输出无效或执行被中断时，运行时如何保持可恢复状态？

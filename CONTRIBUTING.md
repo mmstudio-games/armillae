@@ -6,7 +6,9 @@ Thank you for contributing to Armillae.
 
 Read [.agents/DESIGN.md](.agents/DESIGN.md) before proposing or implementing a change. It routes
 changes to an active specification or an accepted RFC. LLM Bridge work is governed by
-[.agents/specs/llm-bridge.md](.agents/specs/llm-bridge.md); Agentic runtime discovery is governed by
+[.agents/specs/llm-bridge.md](.agents/specs/llm-bridge.md). Simulation work is governed by the
+[Simulate Active Spec](.agents/specs/simulate.md) and
+[accepted RFC 0002](.agents/rfcs/0002-simulate.md). Agentic runtime discovery remains in
 [RFC 0001](.agents/rfcs/0001-agentic-runtime.md). [.agents/TODO.md](.agents/TODO.md) is the
 project-wide checklist index; detailed implementation differences live under `.agents/todos/`.
 User-facing installation, concepts, guides, and API documentation belong under `docs/`.
@@ -20,9 +22,12 @@ policy, security boundary, dependency choice, or scope change, update files in t
 3. the corresponding `.agents/todos/*.md` implementation checklist;
 4. code, configuration, tests, examples, and affected user documentation.
 
-The Agentic runtime is in discovery. Do not create runtime crates, APIs, persistence schemas,
-automatic Tool loops, memory, or scheduling behavior before its scenarios and contracts are
-confirmed. Keep Rig types inside `armillae-llm-rig`.
+The Agentic runtime remains in discovery, and state/persistence work is paused. Simulate's public
+API and protocol are frozen in its active specification, but product crates remain blocked on the
+Bevy P0 spike in section 16. Do not infer Hosted loaders, persistence schemas, Agent harnesses,
+automatic Tool loops,
+memory, or scheduling policy from the Simulate contract. Keep Rig types inside
+`armillae-llm-rig`.
 
 ## Rust changes
 

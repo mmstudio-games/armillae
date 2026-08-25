@@ -7,10 +7,13 @@
 
 - 生态设计入口：[.agents/DESIGN.md](.agents/DESIGN.md)
 - LLM Bridge 与 Tool Executor Active Spec：[.agents/specs/llm-bridge.md](.agents/specs/llm-bridge.md)
+- Simulate Active Spec：[.agents/specs/simulate.md](.agents/specs/simulate.md)
 - Agentic 叙事运行时 Draft RFC：[.agents/rfcs/0001-agentic-runtime.md](.agents/rfcs/0001-agentic-runtime.md)
+- Simulate 与可替换 ECS 后端 Accepted RFC：[.agents/rfcs/0002-simulate.md](.agents/rfcs/0002-simulate.md)
 - RFC 工作流：[.agents/rfcs/README.md](.agents/rfcs/README.md)
 - 全项目实施清单索引：[.agents/TODO.md](.agents/TODO.md)
 - LLM Bridge 实施清单：[.agents/todos/llm-bridge.md](.agents/todos/llm-bridge.md)
+- Simulate 实施清单：[.agents/todos/simulate.md](.agents/todos/simulate.md)
 - 跨项目与发布清单：[.agents/todos/project.md](.agents/todos/project.md)
 
 `.agents/DESIGN.md` 只负责设计索引、生态分层和跨子系统边界；具体需求、协议、安全边界与
@@ -25,8 +28,10 @@
   不得创建实施任务。
 - 只有代码和必要验证均已满足 Active Spec 或已接受 RFC 后，才能勾选对应实施项。
 - 不得让实施清单、代码或测试与 Active Spec 或已接受 RFC 冲突。
-- Agentic 叙事运行时当前处于 Discovery；场景、领域模型和公共契约冻结前，不得将待决问题
-  直接实现为 crate、API、持久化 Schema、自动 Tool Loop、Memory 或调度策略。
+- Agentic 叙事运行时仍处于 Discovery，状态与持久化方向当前暂停；不得将其待决问题直接实现
+  为 crate、API、持久化 Schema、自动 Tool Loop、Memory 或调度策略。
+- Simulate 已进入 Active Spec，但在 Spec 第 16 节实施门禁和 Bevy P0 Spike 完成前不得创建
+  产品 crate；实现不得自行补全 Hosted Loader、持久化或 Agent Harness 行为。
 
 ## 2. 修改授权
 
