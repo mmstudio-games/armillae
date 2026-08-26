@@ -1,5 +1,13 @@
 # Changelog
 
+<!-- semifold:release version=0.1.0-alpha.1 -->
+## v0.1.0-alpha.1
+
+### Chores
+
+- [`1d9a64c`](https://github.com/mmstudio-games/armillae/commit/1d9a64c5d5721d7230c0ef2d96e902e5f2afcce6): Keep all four foundational crates on the alpha release channel, withdraw the pending direct stable promotion, and define evidence-based beta and stable entry gates.
+<!-- semifold:release:end -->
+
 <!-- semifold:release version=0.1.0-alpha.0 -->
 ## v0.1.0-alpha.0
 
