@@ -32,7 +32,7 @@ impl LiveTarget {
         })?;
         let (default_model, credential_env) = match provider.as_str() {
             "openai" => ("gpt-4.1-mini", "OPENAI_API_KEY"),
-            "deepseek" => ("deepseek-chat", "DEEPSEEK_API_KEY"),
+            "deepseek" => ("deepseek-v4-flash", "DEEPSEEK_API_KEY"),
             "minimax" => ("MiniMax-M2", "MINIMAX_API_KEY"),
             "moonshot" => ("kimi-k2", "MOONSHOT_API_KEY"),
             _ => {

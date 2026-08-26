@@ -322,7 +322,8 @@ history.push(response.as_assistant_message());
 Export `DEEPSEEK_API_KEY`, then run
 [`deepseek_conversation.rs`](../crates/armillae-llm-rig/examples/deepseek_conversation.rs). Enter
 `/quit` to leave the conversation. The example uses Provider `deepseek` and the frozen baseline
-model `deepseek-chat`; no custom endpoint is required.
+model `deepseek-v4-flash`; no custom endpoint is required. The deprecated `deepseek-chat` and
+`deepseek-reasoner` aliases are intentionally not used.
 
 ### Local Ollama without a credential
 
@@ -383,7 +384,7 @@ prompts, or unredacted responses.
 
 ## Live support gate
 
-The release gate is frozen to `openai/gpt-4.1-mini`, `deepseek/deepseek-chat`,
+The release gate is frozen to `openai/gpt-4.1-mini`, `deepseek/deepseek-v4-flash`,
 `minimax/MiniMax-M2`, and `moonshot/kimi-k2`. The ignored harness covers text, streaming, System and
 multi-turn history, structured output, single and multiple ToolCalls, manual ToolResult continuation,
 Usage/response facts, local capability rejection, and remote Provider rejection.

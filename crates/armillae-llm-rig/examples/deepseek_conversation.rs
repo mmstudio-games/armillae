@@ -8,7 +8,7 @@ use armillae_llm_rig::RigBridgeFactory;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let config = BridgeConfig::builder("rig", "deepseek", "deepseek-chat")
+    let config = BridgeConfig::builder("rig", "deepseek", "deepseek-v4-flash")
         .credential(CredentialRef::Environment {
             name: "DEEPSEEK_API_KEY".to_owned(),
         })

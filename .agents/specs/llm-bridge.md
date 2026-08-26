@@ -1532,9 +1532,13 @@ let final_response = bridge
 | Provider | 模型 | credential 环境变量 | endpoint |
 | --- | --- | --- | --- |
 | `openai` | `gpt-4.1-mini` | `OPENAI_API_KEY` | rig 默认 OpenAI endpoint |
-| `deepseek` | `deepseek-chat` | `DEEPSEEK_API_KEY` | rig 默认全球 endpoint |
+| `deepseek` | `deepseek-v4-flash` | `DEEPSEEK_API_KEY` | rig 默认全球 endpoint |
 | `minimax` | `MiniMax-M2` | `MINIMAX_API_KEY` | rig 默认全球 endpoint |
 | `moonshot` | `kimi-k2` | `MOONSHOT_API_KEY` | rig 默认全球 endpoint |
+
+DeepSeek 基线使用 Rig 0.41 提供的 `deepseek-v4-flash` 正式模型 ID。不得继续使用已于
+2026-07-24 弃用的 `deepseek-chat` 或 `deepseek-reasoner` 别名；它们只作为分别映射到 V4 Flash
+非思考与思考模式的 Provider 兼容入口，不构成冻结矩阵的可重复模型标识。
 
 Live harness 默认 ignored，在具备明确凭证的发布工作站上串行执行，不进入普通离线 CI。每个
 Provider 必须通过上述全部适用场景；能力矩阵明确不支持的场景以本地预检成功拒绝为通过。证据

@@ -336,7 +336,7 @@ mod tests {
             };
             let expected = CompletionResponse {
                 id: Some("chatcmpl-deepseek".to_owned()),
-                model: Some("deepseek-chat".to_owned()),
+                model: Some("deepseek-v4-flash".to_owned()),
                 content: vec![AssistantContent::Text(TextContent::new("hello"))],
                 finish_reason: Some(FinishReason::Stop),
                 usage: Some(TokenUsage {
@@ -577,7 +577,7 @@ mod tests {
     fn deepseek_text_response() -> Value {
         json!({
             "id": "chatcmpl-deepseek",
-            "model": "deepseek-chat",
+            "model": "deepseek-v4-flash",
             "system_fingerprint": "fp-deepseek",
             "choices": [{
                 "index": 0,

@@ -266,6 +266,8 @@
 ## OpenAI 协议端到端支持声明门禁
 
 - [x] 冻结“主流模型”的 Provider/模型版本矩阵、凭证来源、执行环境与通过标准。
+- [x] 将 DeepSeek 冻结模型从已弃用的 `deepseek-chat` 兼容别名迁移到 Rig 0.41 正式模型 ID
+      `deepseek-v4-flash`，并同步 Live harness、示例、离线夹具和用户指南。
 - [x] 提供默认 ignored 的 Live harness，覆盖文本、Streaming、System、多轮、结构化输出、
       ToolCall、手工 ToolResult 闭环、Usage 和错误场景。
 - [ ] 使用真实凭证对冻结矩阵执行非流式与流式文本、System 和多轮历史。
