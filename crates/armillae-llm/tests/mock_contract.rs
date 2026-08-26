@@ -119,6 +119,34 @@ fn capability_rejection_records_request_without_consuming_script() {
 }
 
 #[test]
+fn projection_is_side_effect_free_and_does_not_consume_mock_script() {
+    let bridge = MockBridge::scripted([MockResponse::text("still available")]);
+    let request = CompletionRequest {
+        messages: vec![Message::user("inspect")],
+        ..CompletionRequest::default()
+    };
+
+    let report = bridge
+        .project(&request)
+        .expect("portable Mock request must project");
+
+    assert_eq!(report.target_provider, "mock");
+    assert!(report.is_exact());
+    assert!(
+        bridge
+            .requests()
+            .expect("request lock is available")
+            .is_empty()
+    );
+    assert_eq!(
+        bridge
+            .remaining_scripted_responses()
+            .expect("script lock is available"),
+        Some(1)
+    );
+}
+
+#[test]
 fn text_stream_preserves_chunks_and_has_one_terminal_response() {
     let bridge = MockBridge::fixed(MockResponse::text_stream(["你", "好", "，Armillae"]));
     let events = collect_stream(&bridge);

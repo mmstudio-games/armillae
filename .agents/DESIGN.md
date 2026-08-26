@@ -1,7 +1,7 @@
 # Armillae 设计索引
 
 > 状态：Active
-> 更新日期：2026-08-26
+> 更新日期：2026-08-27
 > 作用：Armillae 生态的权威工程设计入口，不在本文件重复各子系统规范或 RFC
 
 本目录服务于项目设计、实施和 Agent 协作；面向使用者的安装、概念、指南与 API 文档统一放在
@@ -16,9 +16,11 @@ Armillae 面向 Agentic 叙事、TRPG 运行时和大世界游戏引擎提供分
 
 模拟推进、Clock、可替换 ECS 后端和 Module 边界已经由 RFC 0002 收敛，并转入
 `armillae-simulate` Active Spec；具体持久化模型及其 RFC 暂缓，不属于 `armillae-simulate` 的
-实现责任。用户于 2026-08-26 明确恢复 LLM Bridge 第一阶段收尾，主仓当前先完成 Ollama、
-Provider 一致性、结构化可观测性、安全审计、示例和 OpenAI 协议 Live 门禁，再返回 Simulate
-实现。完成 Live 场景矩阵并留下脱敏证据前，仍不宣称“全量支持所有 OpenAI 协议主流模型”。
+实现责任。LLM Bridge 第一阶段离线基线已经完成；真实 DeepSeek 多轮验证暴露出 ProviderData
+只有响应保留、没有请求回放的非对称边界。用户于 2026-08-27 接受 RFC 0003，要求 Armillae
+继续拥有 canonical LLM 协议，由 Adapter 对目标 Provider 做双向投影，并由独立 LLM Router
+在显式策略下提供模型 fallback。所有已支持 Adapter 的直接 Bridge projection 已完成离线实现
+与 Mock HTTP 合约；Router 和授权 Live 场景矩阵仍待完成，因此仍不宣称“全量兼容所有模型”。
 
 ## 2. 分层与依赖方向
 
@@ -33,23 +35,28 @@ Agentic 叙事运行时                 Discovery
   │     ├── armillae-simulate       后端中立的执行、Clock 与 Module 契约
   │     └── armillae-simulate-bevy  首个 ECS 后端适配
   ├── 组合：状态与持久化            RFC 暂缓；独立于 simulate
-  ├── 可选：LlmBridge              第一阶段收尾 Active；Ollama、可观测性与验收
+  ├── 可选：LlmRouter              RFC 0003 Accepted；组合多个 LlmBridge
+  │     └── LlmBridge              一次 Provider Model Call；canonical 协议投影
+├── 可选：直接使用 LlmBridge      Provider projection 离线合约已完成
   ├── 可选：ToolExecutor           单次执行边界已实现
   └── 副作用治理
 ```
 
-依赖只能从上层指向下层。`LlmBridge` 仍只执行一次 Model Call，`ToolExecutor` 仍只执行一次
-`ToolCall -> ToolResult`；它们不持有 Agentic 运行时，也不负责推进叙事、Turn 或世界状态。
-运行时是否以及何时调用模型，是运行时设计问题，不是 Bridge 协议的一部分。
+依赖只能从上层指向下层。`LlmBridge` 仍只执行一次 Provider Model Call，`ToolExecutor` 仍只
+执行一次 `ToolCall -> ToolResult`；它们不持有 Agentic 运行时，也不负责推进叙事、Turn 或
+世界状态。`LlmRouter` 可以按宿主显式提供的候选顺序和 fallback 策略执行一个或多个 Bridge
+attempt，但不执行 Tool、不维护 Conversation Memory，也不改变 canonical request。运行时可以
+直接使用 Bridge 或组合 Router；是否以及何时发起一次逻辑 LLM 请求仍由运行时或应用决定。
 
 ## 3. 权威工程文档
 
 | 文档 | 类型与状态 | 权威范围 |
 |---|---|---|
-| [LLM Bridge 与 Tool Executor](specs/llm-bridge.md) | Active Spec | 公共消息与 Completion 协议、Bridge、Tool、Provider Adapter、Streaming、安全与合约测试 |
+| [LLM Bridge、Router 与 Tool Executor](specs/llm-bridge.md) | Active Spec | Canonical 消息与 Completion 协议、Bridge、Router、Tool、Provider projection、Streaming、安全与合约测试 |
 | [Simulate](specs/simulate.md) | Active Spec | 公共 API 与 JSON 协议、显式执行与推进、Clock、Module、后端契约、Bevy-native API 和验收门禁 |
 | [RFC 0001：Agentic 叙事运行时](rfcs/0001-agentic-runtime.md) | Draft RFC | 运行时目标、分层边界、待冻结的领域模型与设计工作流 |
 | [RFC 0002：Simulate 与可替换 ECS 后端](rfcs/0002-simulate.md) | Accepted RFC | Simulate 命名、责任、推进所有权、Clock、Module 与可替换后端决策 |
+| [RFC 0003：LLM canonical 投影与模型 fallback](rfcs/0003-llm-projection-fallback.md) | Accepted RFC | Provider 双向投影、兼容性事实、候选路由与 fallback 边界 |
 | [rig-core 0.41.0 Spike](spikes/rig-core-0.41.0.md) | Completed Spike | Rig 低层可行性证据、限制与锁定版本依据 |
 
 实现前必须先在本索引中找到对应的 Active Spec 或已接受 RFC，再从 [TODO 索引](TODO.md)
@@ -58,16 +65,20 @@ Agentic 叙事运行时                 Discovery
 
 ## 4. 当前工作顺序
 
-1. 完成 LLM Bridge 第一阶段收尾：Ollama、统一 Provider 合约、结构化可观测性、安全审计、
-   示例与用户文档，并建立默认 ignored 的 OpenAI 协议 Live 场景门禁。没有真实凭证时只交付
-   可复现门禁，不伪造 Live 通过证据。
-2. 按已冻结的 Simulate 公共契约完成 Bevy P0 Spike，再实现共享后端合约测试；在 Spike 编译
+1. 按 RFC 0003 和 LLM Bridge Active Spec 先完成所有已支持 Adapter 的直接 Bridge Provider
+   projection：同 Provider 回放已知私有数据，跨 Provider 只生成目标 wire projection，不修改
+   canonical 数据，并让调用方取得结构化 compatibility facts。
+2. 通过直接 Bridge 合约与 Live 回归证明 projection 闭环后，再实现 host-owned fallback Router；
+   Router 只复用 Adapter projection，不成为单 Provider 正常工作的前置条件。
+3. 重新执行 DeepSeek 多轮与 Tool continuation Live 验证，再完成默认 ignored 的 OpenAI 协议
+   Live 场景门禁。没有真实凭证时只交付可复现门禁，不伪造 Live 通过证据。
+4. 按已冻结的 Simulate 公共契约完成 Bevy P0 Spike，再实现共享后端合约测试；在 Spike 编译
    验证精确 Bevy 版本、Features 和错误边界前不创建产品 crate。
-3. 使用 Simulate 的已确认边界继续完成 Agentic 叙事运行时 RFC，不让运行时替用户决定 Agent、
+5. 使用 Simulate 的已确认边界继续完成 Agentic 叙事运行时 RFC，不让运行时替用户决定 Agent、
    Tool 或 Simulation Driver 的调度策略。
-4. 状态与持久化继续作为独立子系统保留，但在用户重新启动该方向前不创建 RFC、Spec、crate
+6. 状态与持久化继续作为独立子系统保留，但在用户重新启动该方向前不创建 RFC、Spec、crate
    或持久化 Schema。
-5. 冻结运行时与 LLM/Tool 等可选能力的依赖边界及端到端验收标准。
+7. 冻结运行时与 LLM/Tool 等可选能力的依赖边界及端到端验收标准。
 
 Anthropic 与 Ollama 继续使用精确锁定的 Rig 0.41.0 和既有 Bridge 合约，不为 Rig 已过滤的原始
 未知 SSE/NDJSON 数据引入自有传输层；Driver 未暴露的事实作为显式兼容限制记录。

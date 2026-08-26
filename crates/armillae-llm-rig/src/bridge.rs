@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
 use armillae_core::{CompletionRequest, CompletionResponse, GenerationOptions};
-use armillae_llm::{BoxFuture, BridgeCapabilities, BridgeError, CompletionStream, LlmBridge};
+use armillae_llm::{
+    BoxFuture, BridgeCapabilities, BridgeError, CompletionStream, LlmBridge, ProjectionReport,
+};
 use rig_core::completion::CompletionModel;
 
 use crate::{
@@ -82,6 +84,13 @@ where
         self.capabilities
     }
 
+    fn project(&self, request: &CompletionRequest) -> Result<ProjectionReport, BridgeError> {
+        self.capabilities.validate_request(request)?;
+        self.request_mapper
+            .map_request(request.clone(), &self.defaults)
+            .map(|projection| projection.report)
+    }
+
     fn complete<'a>(
         &'a self,
         request: CompletionRequest,
@@ -95,7 +104,9 @@ where
             );
             let result = async {
                 self.capabilities.validate_request(&request)?;
-                let request = self.request_mapper.map_request(request, &self.defaults)?;
+                let projection = self.request_mapper.map_request(request, &self.defaults)?;
+                observability::record_projection(&projection.report);
+                let request = projection.request;
                 let response = self
                     .model
                     .completion(request)
@@ -122,7 +133,9 @@ where
             );
             let result = async {
                 self.capabilities.validate_streaming_request(&request)?;
-                let request = self.request_mapper.map_request(request, &self.defaults)?;
+                let projection = self.request_mapper.map_request(request, &self.defaults)?;
+                observability::record_projection(&projection.report);
+                let request = projection.request;
                 let response = self
                     .model
                     .stream(request)
@@ -151,11 +164,11 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use armillae_core::{
-        AssistantContent, CompletionRequest, FinishReason, GenerationOptions, Message, TextContent,
-        TokenUsage,
+        AssistantContent, CompletionRequest, ContentPart, FinishReason, GenerationOptions, Message,
+        ProviderData, TextContent, TokenUsage,
     };
     use armillae_llm::{
-        BridgeCapabilities, BridgeError, LlmBridge, OutputFormatCapabilities,
+        BridgeCapabilities, BridgeError, CompatibilityAction, LlmBridge, OutputFormatCapabilities,
         ToolChoiceCapabilities,
         mock::contract::{verify_completion, verify_stream},
     };
@@ -350,6 +363,46 @@ mod tests {
                     .is_empty()
             );
         });
+    }
+
+    #[test]
+    fn projection_reports_foreign_data_without_invoking_or_mutating_request() {
+        let model = ProbeModel::default();
+        let bridge = bridge(model.clone());
+        let request = CompletionRequest {
+            messages: vec![Message::assistant(vec![
+                ContentPart::text("visible"),
+                ContentPart::ProviderData(ProviderData {
+                    provider: "deepseek".to_owned(),
+                    kind: "reasoning".to_owned(),
+                    value: json!({ "opaque": true }),
+                }),
+            ])],
+            ..CompletionRequest::default()
+        };
+        let original = request.clone();
+
+        let report = bridge
+            .project(&request)
+            .expect("foreign ProviderData must not block projection");
+
+        assert_eq!(request, original);
+        assert_eq!(report.target_provider, "openai");
+        assert!(matches!(
+            report.facts.as_slice(),
+            [fact]
+                if fact.source_provider == "deepseek"
+                    && fact.target_provider == "openai"
+                    && fact.kind == "reasoning"
+                    && fact.action == CompatibilityAction::NotForwarded
+        ));
+        assert!(
+            model
+                .requests
+                .lock()
+                .expect("the probe request lock must not be poisoned")
+                .is_empty()
+        );
     }
 
     #[test]

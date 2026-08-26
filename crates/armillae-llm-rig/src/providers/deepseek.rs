@@ -147,7 +147,8 @@ fn finish_reason(reason: &str) -> FinishReason {
 mod tests {
     use armillae_core::{
         AssistantContent, CompletionRequest, CompletionResponse, FinishReason, Message,
-        OutputFormat, TextContent, TokenUsage, ToolChoice, ToolDefinition,
+        OutputFormat, TextContent, TokenUsage, ToolChoice, ToolDefinition, ToolResult,
+        ToolResultContent,
     };
     use armillae_llm::{
         BridgeError,
@@ -417,7 +418,7 @@ mod tests {
             let (config, credential, request_mapper) =
                 validate_named_config(config, credential, "deepseek", "DeepSeek")
                     .expect("DeepSeek test config must validate");
-            let bridge = create_validated(config, credential, request_mapper, http_client)
+            let bridge = create_validated(config, credential, request_mapper, http_client.clone())
                 .expect("DeepSeek test bridge must construct");
 
             let response = bridge
@@ -445,9 +446,58 @@ mod tests {
                         if data.provider == "deepseek" && data.kind == "reasoning"
                 )
             }));
+            let continuation = CompletionRequest {
+                messages: vec![
+                    Message::user("use weather"),
+                    response.as_assistant_message(),
+                    Message::tool_result(ToolResult {
+                        call_id: armillae_core::ToolCallId::new("call-weather")
+                            .expect("fixture ToolCall ID must be non-empty"),
+                        content: vec![ToolResultContent::Text {
+                            text: "sunny".to_owned(),
+                        }],
+                        is_error: false,
+                    }),
+                ],
+                tools: vec![tool_definition()],
+                tool_choice: Some(ToolChoice::Auto),
+                ..CompletionRequest::default()
+            };
+            assert!(
+                bridge
+                    .project(&continuation)
+                    .expect("DeepSeek continuation must project")
+                    .is_exact()
+            );
+            bridge
+                .complete(continuation)
+                .await
+                .expect("DeepSeek reasoning and ToolResult continuation must remain callable");
+
+            let requests = http_client.requests();
+            let continuation_body: Value = serde_json::from_slice(
+                &requests
+                    .get(1)
+                    .expect("DeepSeek continuation must issue a second request")
+                    .body,
+            )
+            .expect("DeepSeek continuation request must be JSON");
+            assert_eq!(
+                continuation_body["messages"][1]["reasoning_content"],
+                "thinking"
+            );
+            assert_eq!(
+                continuation_body["messages"][1]["tool_calls"][0]["id"],
+                "call-weather"
+            );
+            assert_eq!(
+                continuation_body["messages"][2]["tool_call_id"],
+                "call-weather"
+            );
             assert_eq!(
                 response
                     .usage
+                    .as_ref()
                     .expect("DeepSeek usage must be present")
                     .cached_input_tokens,
                 Some(6)

@@ -13,6 +13,7 @@ use serde_json::Value;
 
 use crate::{
     BoxFuture, BridgeCapabilities, BridgeError, CompletionStream, ErrorMetadata, LlmBridge,
+    ProjectionReport,
 };
 
 pub mod contract;
@@ -235,6 +236,11 @@ impl MockBridge {
 impl LlmBridge for MockBridge {
     fn capabilities(&self) -> BridgeCapabilities {
         self.capabilities
+    }
+
+    fn project(&self, request: &CompletionRequest) -> Result<ProjectionReport, BridgeError> {
+        self.capabilities.validate_request(request)?;
+        Ok(ProjectionReport::exact("mock"))
     }
 
     fn complete<'a>(

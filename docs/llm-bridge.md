@@ -112,6 +112,45 @@ let bridge = RigBridgeFactory.create(resolved).await?;
 # }
 ```
 
+## Canonical history and target projection
+
+`CompletionRequest` and its messages remain Armillae-owned canonical data. Every Bridge projects
+that request to its own Provider at the send boundary. Known private response data, such as
+DeepSeek reasoning, Anthropic signed thinking, Ollama thinking, or Provider ToolCall metadata, is
+replayed when the next request targets the same Provider.
+
+An application can inspect the projection before sending:
+
+```rust
+use armillae_core::{CompletionRequest, Message};
+use armillae_llm::LlmBridge;
+
+# fn inspect(bridge: &dyn LlmBridge) -> Result<(), armillae_llm::BridgeError> {
+let request = CompletionRequest {
+    messages: vec![Message::user("Continue the conversation")],
+    ..CompletionRequest::default()
+};
+let report = bridge.project(&request)?;
+if !report.is_exact() {
+    // Inspect content-free compatibility facts before deciding whether to send.
+    let _facts = &report.facts;
+}
+# Ok(())
+# }
+```
+
+`project` is synchronous, performs no network I/O, does not mutate the request, and does not consume
+a Mock script item. An exact projection has no facts. Private data from another Provider, or an
+unknown private kind, remains in the caller's canonical history but is not sent to the target;
+the report contains a content-free `NotForwarded` fact. Malformed private data that the same
+Provider claims to understand returns `BridgeError::ProjectionIncompatible` instead of being
+dropped.
+
+`LlmRouter` is not required for this behavior. A host may manually call `project` and `complete` on
+another Bridge using the same original request. The target Bridge performs its own projection;
+the host remains responsible for choosing which errors permit another attempt and must not combine
+two response streams after semantic output has started.
+
 `resolve()` is the common path for Environment, File, or credential-free configurations. It
 validates the configuration and turns the credential reference into a non-serializable, redacted
 `ResolvedBridgeConfig`. A host only needs `resolve_with(...)` when it uses

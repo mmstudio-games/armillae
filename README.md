@@ -13,6 +13,8 @@ implemented LLM foundation currently provides:
 
 - provider-independent message, completion, Tool, usage, and streaming protocols;
 - a runtime-independent `LlmBridge` for exactly one model call;
+- target Provider projection with same-Provider reasoning replay and observable cross-Provider
+  compatibility facts;
 - type-safe Tool authoring, registration, and exactly one ToolCall execution;
 - deterministic mocks and shared Bridge contract tests;
 - Rig adapters for OpenAI, generic OpenAI-compatible endpoints, DeepSeek, MiniMax, Moonshot,

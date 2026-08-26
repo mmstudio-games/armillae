@@ -546,6 +546,84 @@ mod tests {
     }
 
     #[test]
+    fn signed_reasoning_round_trips_into_same_provider_history() {
+        let response = json!({
+            "type": "message",
+            "id": "msg-thinking",
+            "model": "claude-test",
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "thinking",
+                    "thinking": "private plan",
+                    "signature": "signature-1"
+                },
+                { "type": "text", "text": "visible answer" }
+            ],
+            "stop_reason": "end_turn",
+            "stop_sequence": null,
+            "usage": { "input_tokens": 4, "output_tokens": 3 }
+        });
+        let (config, credential) =
+            resolved_config("anthropic", Some("http://anthropic.test"), true, json!({}));
+        futures::executor::block_on(async {
+            let http_client = RecordingHttpClient::new(response.to_string());
+            let (config, credential, request_mapper) = validate_config(config, credential)
+                .expect("Anthropic reasoning config must validate");
+            let bridge = create_validated(config, credential, request_mapper, http_client.clone())
+                .expect("Anthropic reasoning bridge must construct");
+
+            let first = bridge
+                .complete(CompletionRequest {
+                    messages: vec![Message::user("think")],
+                    generation: generation(),
+                    ..CompletionRequest::default()
+                })
+                .await
+                .expect("Anthropic reasoning response must normalize");
+            let continuation = CompletionRequest {
+                messages: vec![
+                    Message::user("think"),
+                    first.as_assistant_message(),
+                    Message::user("continue"),
+                ],
+                generation: generation(),
+                ..CompletionRequest::default()
+            };
+
+            assert!(
+                bridge
+                    .project(&continuation)
+                    .expect("Anthropic signed reasoning must project")
+                    .is_exact()
+            );
+            bridge
+                .complete(continuation)
+                .await
+                .expect("Anthropic signed reasoning history must remain callable");
+
+            let requests = http_client.requests();
+            let body: Value = serde_json::from_slice(
+                &requests
+                    .get(1)
+                    .expect("Anthropic continuation must issue a second request")
+                    .body,
+            )
+            .expect("Anthropic continuation request must be JSON");
+            assert_eq!(body["messages"][1]["content"][0]["type"], "thinking");
+            assert_eq!(
+                body["messages"][1]["content"][0]["thinking"],
+                "private plan"
+            );
+            assert_eq!(
+                body["messages"][1]["content"][0]["signature"],
+                "signature-1"
+            );
+            assert_eq!(body["messages"][1]["content"][1]["text"], "visible answer");
+        });
+    }
+
+    #[test]
     fn unsupported_or_lossy_requests_are_rejected_before_transport() {
         let (config, credential) =
             resolved_config("anthropic", Some("http://anthropic.test"), true, json!({}));

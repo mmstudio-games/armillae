@@ -2,18 +2,23 @@ use armillae_core::{
     CompletionRequest as ArmillaeCompletionRequest, ContentPart, GenerationOptions, OutputFormat,
     Role, ToolCallId,
 };
-use armillae_llm::BridgeError;
+use armillae_llm::{BridgeError, ProjectionReport};
 use rig_core::completion::CompletionRequest as RigCompletionRequest;
 use serde_json::{Map, Value, json};
 
 use crate::convert;
+
+pub(crate) struct RigRequestProjection {
+    pub(crate) request: RigCompletionRequest,
+    pub(crate) report: ProjectionReport,
+}
 
 pub(crate) trait RigRequestMapper: Send + Sync {
     fn map_request(
         &self,
         request: ArmillaeCompletionRequest,
         defaults: &GenerationOptions,
-    ) -> Result<RigCompletionRequest, BridgeError>;
+    ) -> Result<RigRequestProjection, BridgeError>;
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -36,9 +41,9 @@ impl RigRequestMapper for AnthropicRequestMapper {
         &self,
         request: ArmillaeCompletionRequest,
         defaults: &GenerationOptions,
-    ) -> Result<RigCompletionRequest, BridgeError> {
+    ) -> Result<RigRequestProjection, BridgeError> {
         validate_anthropic_messages(&request)?;
-        let parts = convert::request_parts(request, defaults)?;
+        let parts = convert::request_parts(request, defaults, "anthropic")?;
         if !parts.extensions.values.is_empty() {
             return invalid_request("Anthropic request extensions are not supported");
         }
@@ -55,6 +60,7 @@ impl RigRequestMapper for AnthropicRequestMapper {
         if !parts.generation.stop.is_empty() {
             additional_params.insert("stop_sequences".to_owned(), json!(parts.generation.stop));
         }
+        let report = parts.projection_report;
         let mut mapped = RigCompletionRequest {
             model: None,
             preamble: None,
@@ -70,7 +76,10 @@ impl RigRequestMapper for AnthropicRequestMapper {
             record_telemetry_content: false,
         };
         apply_anthropic_output_format(&mut mapped, parts.output_format)?;
-        Ok(mapped)
+        Ok(RigRequestProjection {
+            request: mapped,
+            report,
+        })
     }
 }
 
@@ -234,9 +243,9 @@ impl RigRequestMapper for OllamaRequestMapper {
         &self,
         mut request: ArmillaeCompletionRequest,
         defaults: &GenerationOptions,
-    ) -> Result<RigCompletionRequest, BridgeError> {
+    ) -> Result<RigRequestProjection, BridgeError> {
         rewrite_ollama_tool_result_ids(&mut request)?;
-        let parts = convert::request_parts(request, defaults)?;
+        let parts = convert::request_parts(request, defaults, "ollama")?;
         if !parts.extensions.values.is_empty() {
             return invalid_request("Ollama request extensions are not supported");
         }
@@ -254,6 +263,7 @@ impl RigRequestMapper for OllamaRequestMapper {
             additional_params.insert("seed".to_owned(), json!(seed));
         }
 
+        let report = parts.projection_report;
         let mut mapped = RigCompletionRequest {
             model: None,
             preamble: None,
@@ -269,7 +279,10 @@ impl RigRequestMapper for OllamaRequestMapper {
             record_telemetry_content: false,
         };
         apply_ollama_output_format(&mut mapped, parts.output_format)?;
-        Ok(mapped)
+        Ok(RigRequestProjection {
+            request: mapped,
+            report,
+        })
     }
 }
 
@@ -350,6 +363,7 @@ fn apply_ollama_output_format(
 
 #[derive(Clone, Debug)]
 pub(crate) struct OpenAiRequestMapper {
+    target_provider: &'static str,
     namespace: &'static str,
     provider_label: &'static str,
     allow_reasoning_effort: bool,
@@ -358,7 +372,17 @@ pub(crate) struct OpenAiRequestMapper {
 
 impl OpenAiRequestMapper {
     pub(crate) fn new(provider_options: Value) -> Result<Self, BridgeError> {
-        Self::build("openai", "OpenAI", true, provider_options)
+        Self::build("openai", "openai", "OpenAI", true, provider_options)
+    }
+
+    pub(crate) fn for_openai_compatible(provider_options: Value) -> Result<Self, BridgeError> {
+        Self::build(
+            "openai-compatible",
+            "openai",
+            "OpenAI-compatible",
+            true,
+            provider_options,
+        )
     }
 
     pub(crate) fn for_named_provider(
@@ -366,10 +390,17 @@ impl OpenAiRequestMapper {
         provider_label: &'static str,
         provider_options: Value,
     ) -> Result<Self, BridgeError> {
-        Self::build(namespace, provider_label, false, provider_options)
+        Self::build(
+            namespace,
+            namespace,
+            provider_label,
+            false,
+            provider_options,
+        )
     }
 
     fn build(
+        target_provider: &'static str,
         namespace: &'static str,
         provider_label: &'static str,
         allow_reasoning_effort: bool,
@@ -382,6 +413,7 @@ impl OpenAiRequestMapper {
         };
         validate_provider_options(&provider_options, provider_label, allow_reasoning_effort)?;
         Ok(Self {
+            target_provider,
             namespace,
             provider_label,
             allow_reasoning_effort,
@@ -393,6 +425,7 @@ impl OpenAiRequestMapper {
 impl Default for OpenAiRequestMapper {
     fn default() -> Self {
         Self {
+            target_provider: "openai",
             namespace: "openai",
             provider_label: "OpenAI",
             allow_reasoning_effort: true,
@@ -406,8 +439,9 @@ impl RigRequestMapper for OpenAiRequestMapper {
         &self,
         request: ArmillaeCompletionRequest,
         defaults: &GenerationOptions,
-    ) -> Result<RigCompletionRequest, BridgeError> {
-        let parts = convert::request_parts(request, defaults)?;
+    ) -> Result<RigRequestProjection, BridgeError> {
+        let parts = convert::request_parts(request, defaults, self.target_provider)?;
+        let report = parts.projection_report;
         let mut additional_params = self.provider_options.clone();
         merge_request_extensions(
             &mut additional_params,
@@ -425,19 +459,22 @@ impl RigRequestMapper for OpenAiRequestMapper {
         }
         apply_output_format(&mut additional_params, parts.output_format)?;
 
-        Ok(RigCompletionRequest {
-            model: None,
-            preamble: None,
-            chat_history: parts.chat_history,
-            documents: Vec::new(),
-            tools: parts.tools,
-            temperature: parts.generation.temperature,
-            max_tokens: parts.generation.max_output_tokens,
-            tool_choice: parts.tool_choice,
-            additional_params: (!additional_params.is_empty())
-                .then_some(Value::Object(additional_params)),
-            output_schema: None,
-            record_telemetry_content: false,
+        Ok(RigRequestProjection {
+            request: RigCompletionRequest {
+                model: None,
+                preamble: None,
+                chat_history: parts.chat_history,
+                documents: Vec::new(),
+                tools: parts.tools,
+                temperature: parts.generation.temperature,
+                max_tokens: parts.generation.max_output_tokens,
+                tool_choice: parts.tool_choice,
+                additional_params: (!additional_params.is_empty())
+                    .then_some(Value::Object(additional_params)),
+                output_schema: None,
+                record_telemetry_content: false,
+            },
+            report,
         })
     }
 }
@@ -587,7 +624,7 @@ fn invalid_request<T>(message: impl Into<String>) -> Result<T, BridgeError> {
 #[cfg(test)]
 mod tests {
     use armillae_core::{
-        CompletionRequest, ContentPart, GenerationOptions, Message, OutputFormat,
+        CompletionRequest, ContentPart, GenerationOptions, Message, OutputFormat, ProviderData,
         ProviderExtensions, Role, ToolCallId, ToolResult, ToolResultContent,
     };
     use armillae_llm::BridgeError;
@@ -619,15 +656,16 @@ mod tests {
             .map_request(request, &GenerationOptions::default())
             .expect("valid OpenAI generation options must map");
         let additional = mapped
+            .request
             .additional_params
             .expect("provider wire fields must be present");
 
-        assert_eq!(mapped.temperature, Some(0.7));
-        assert_eq!(mapped.max_tokens, Some(512));
+        assert_eq!(mapped.request.temperature, Some(0.7));
+        assert_eq!(mapped.request.max_tokens, Some(512));
         assert_eq!(additional["stop"], json!(["END"]));
         assert_eq!(additional["seed"], 42);
         assert_eq!(additional["response_format"]["type"], "json_object");
-        assert!(mapped.output_schema.is_none());
+        assert!(mapped.request.output_schema.is_none());
     }
 
     #[test]
@@ -653,6 +691,7 @@ mod tests {
             .map_request(request, &GenerationOptions::default())
             .expect("valid JSON Schema output must map");
         let format = &mapped
+            .request
             .additional_params
             .expect("response_format must be present")["response_format"];
 
@@ -660,7 +699,7 @@ mod tests {
         assert_eq!(format["json_schema"]["name"], "answer_payload");
         assert_eq!(format["json_schema"]["strict"], false);
         assert_eq!(format["json_schema"]["schema"], schema);
-        assert!(mapped.output_schema.is_none());
+        assert!(mapped.request.output_schema.is_none());
     }
 
     #[test]
@@ -683,6 +722,7 @@ mod tests {
 
         assert_eq!(
             mapped
+                .request
                 .additional_params
                 .expect("reasoning_effort must be present")["reasoning_effort"],
             "high"
@@ -745,6 +785,7 @@ mod tests {
             .map_request(request, &GenerationOptions::default())
             .expect("error ToolResult must remain sendable");
         let native = mapped
+            .request
             .chat_history
             .into_iter()
             .map(Vec::<openai::completion::Message>::try_from)
@@ -763,6 +804,70 @@ mod tests {
         assert_eq!(tool_message["tool_call_id"], "call-1");
         assert_eq!(tool_message["content"], "lookup failed");
         assert_eq!(tool_message.get("is_error"), None);
+    }
+
+    #[test]
+    fn every_openai_family_mapper_replays_same_provider_reasoning_to_wire() {
+        let mappers = vec![
+            (
+                "openai",
+                OpenAiRequestMapper::new(json!({})).expect("OpenAI mapper must construct"),
+            ),
+            (
+                "openai-compatible",
+                OpenAiRequestMapper::for_openai_compatible(json!({}))
+                    .expect("OpenAI-compatible mapper must construct"),
+            ),
+            (
+                "deepseek",
+                OpenAiRequestMapper::for_named_provider("deepseek", "DeepSeek", json!({}))
+                    .expect("DeepSeek mapper must construct"),
+            ),
+            (
+                "minimax",
+                OpenAiRequestMapper::for_named_provider("minimax", "MiniMax", json!({}))
+                    .expect("MiniMax mapper must construct"),
+            ),
+            (
+                "moonshot",
+                OpenAiRequestMapper::for_named_provider("moonshot", "Moonshot", json!({}))
+                    .expect("Moonshot mapper must construct"),
+            ),
+        ];
+
+        for (provider, mapper) in mappers {
+            let request = CompletionRequest {
+                messages: vec![Message::assistant(vec![
+                    ContentPart::ProviderData(ProviderData {
+                        provider: provider.to_owned(),
+                        kind: "reasoning".to_owned(),
+                        value: serde_json::to_value(rig_core::message::Reasoning::new("private"))
+                            .expect("fixture reasoning must serialize"),
+                    }),
+                    ContentPart::text("visible"),
+                ])],
+                ..CompletionRequest::default()
+            };
+            let projection = mapper
+                .map_request(request, &GenerationOptions::default())
+                .unwrap_or_else(|error| panic!("{provider} reasoning must project: {error}"));
+            assert!(projection.report.is_exact());
+            let native = projection
+                .request
+                .chat_history
+                .into_iter()
+                .map(Vec::<openai::completion::Message>::try_from)
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap_or_else(|error| panic!("{provider} Rig history must encode: {error}"))
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>();
+            let wire = serde_json::to_value(native)
+                .unwrap_or_else(|error| panic!("{provider} wire must serialize: {error}"));
+
+            assert_eq!(wire[0]["reasoning_content"], "private", "{provider}");
+            assert_eq!(wire[0]["content"][0]["text"], "visible", "{provider}");
+        }
     }
 
     #[test]
@@ -818,9 +923,9 @@ mod tests {
             .map_request(request, &GenerationOptions::default())
             .expect("system message must map");
 
-        assert!(mapped.preamble.is_none());
+        assert!(mapped.request.preamble.is_none());
         assert!(matches!(
-            mapped.chat_history.into_iter().next(),
+            mapped.request.chat_history.into_iter().next(),
             Some(RigMessage::System { content }) if content == "rules"
         ));
     }

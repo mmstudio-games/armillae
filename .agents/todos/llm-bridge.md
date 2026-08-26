@@ -1,15 +1,20 @@
-# LLM Bridge 与 Tool Executor 实施清单
+# LLM Bridge、Router 与 Tool Executor 实施清单
 
-> 状态：Active；第一阶段离线验收完成，等待 OpenAI 协议 Live 矩阵
-> 技术事实来源：[LLM Bridge 与 Tool Executor Spec](../specs/llm-bridge.md)
+> 状态：Active；P7 直接 canonical projection 离线完成，fallback Router 与 Live 回归待实现
+> 技术事实来源：[LLM Bridge、Router 与 Tool Executor Spec](../specs/llm-bridge.md)
 > 设计入口：[Armillae 设计索引](../DESIGN.md)
-> 最后核对：2026-08-26
+> 最后核对：2026-08-27
 
-本清单只记录 LLM Bridge 与 Tool Executor 设计和当前实现之间的差异。
+本清单只记录 LLM Bridge、Router 与 Tool Executor 设计和当前实现之间的差异。
 
-当前 Workspace 与 P0 至 P5、Anthropic P6 已完成。用户于 2026-08-26 恢复全部 LLM Bridge
-收尾；当前按 Ollama 与 Provider 一致性、可观测性与安全、示例与 Live 门禁、最终验收的顺序
-实施，不继续扩大既定 Provider 或公共协议范围。
+当前 Workspace 与 P0 至 P6 离线基线已完成。真实 DeepSeek 多轮验证暴露 ProviderData
+响应保留但请求不可回放的非对称边界；用户于 2026-08-27 接受 RFC 0003。所有当前 Adapter 的
+直接 Provider projection、compatibility facts 和同 Provider replay 已完成离线实现；下一步是
+授权 Live 回归和 host-owned fallback Router。
+
+用户于 2026-08-27 进一步确认实施顺序：所有当前 Provider 的直接 Bridge projection 是第一
+优先级，Router 不是单 Provider 正常工作的前置条件。只有直接 Bridge 的回放与手工跨 Provider
+调度通过合约测试后，才开始 Router 实现。
 
 ## 总体边界
 
@@ -17,6 +22,8 @@
 - [x] 保持 Tool Executor 一次只执行一个 ToolCall，不调用 Bridge。
 - [x] 保持 `armillae-core`、`armillae-llm`、`armillae-tools` 和
       `armillae-llm-rig` 的设计依赖方向。
+- [ ] 保持 canonical request/history 由调用方拥有，任何 Candidate projection 均不原地修改。
+- [ ] 保持 Router 独立于单次调用 Bridge；Router 不实现 Tool Loop、Memory、Turn 或 Agent 调度。
 - [x] 确保除 `armillae-llm-rig` 外没有 crate 依赖或暴露 rig 类型。
 - [x] 不在第一阶段引入 Turn Runner、完整 Agent、Memory、Embedding、Vector Store、RAG、
       工作流编排或世界状态。
@@ -138,7 +145,8 @@
 - [x] 在请求发送前验证 Streaming、Tool Calling、ToolChoice、Structured Output 和 Role 能力。
 - [x] 能力由 Provider/模型基线和 Adapter 验证结果决定，不提供可序列化覆盖，也不得虚构
       Provider 能力。
-- [x] 不支持的能力必须明确报错，不伪造流或静默降级。
+- [x] 直接 Bridge 调用遇到不支持的能力必须明确报错，不伪造流或静默降级；Router 的候选
+      选择语义由 P7 单独实现。
 
 ### 错误与取消
 
@@ -306,6 +314,66 @@
 - [x] 转换单元测试保持离线，Mock HTTP/cassette 测试不依赖真实 Provider。
 - [x] Live 测试默认 ignored，仅在发布前使用明确提供的真实凭证运行。
 
+## P7：Canonical Projection 与 Model Fallback
+
+### 公共合约与边界
+
+- [x] 实现已冻结的 `LlmBridge::project(&CompletionRequest) -> ProjectionReport` 合约，使直接
+      Bridge 与 Router
+      attempt 复用同一 Adapter 投影实现，且不暴露 Rig 或 Provider wire 类型。
+- [x] 冻结 compatibility fact 的位置、source/target、kind、action、lossy 和脱敏语义；
+      `not_forwarded` 在标准语义仍可表达时不得使 Candidate 失败。
+- [ ] 冻结宿主构造的 Candidate、fallback policy、attempt/route report、成功结果和候选耗尽错误
+      合约；运行时对象与需要持久化或交换的纯数据报告保持分离。
+- [x] 让直接 Bridge 调用也能取得 projection/compatibility 结果，不允许只有 Router 可观察，
+      也不允许通过自由文本日志代替结构化事实。
+- [x] 保持 canonical request/history 只读；每个 Candidate 从原始 Armillae 数据独立投影，不能
+      复用或写回前一 Candidate 的 wire request。
+
+### Provider 双向投影
+
+- [x] 修复 DeepSeek reasoning 的响应解码与同 Provider 请求回放，覆盖普通多轮及
+      reasoning + ToolCall + ToolResult continuation。
+- [x] 审计 Anthropic signed reasoning；能由 Rig 安全还原时完成回放，无法还原时返回结构化
+      projection failure，不得删除签名后继续。
+- [x] 审计 Ollama thinking/reasoning 的回放能力和 Rig 0.41 边界。
+- [x] 审计 OpenAI、OpenAI-compatible、MiniMax 和 Moonshot 的 replay data、观察 metadata 与
+      未知数据分类，禁止把 response ID、Usage 或诊断 metadata 塞回消息请求。
+- [x] 验证外部 ProviderData 与同 Provider 未知 kind 不进入目标 wire request，产生
+      `not_forwarded` fact 且不修改 canonical history。
+- [x] 验证标准 Role、Text、ToolCall ID、ToolResult 关联、ToolChoice 强度、Schema 和内容顺序在
+      projection 中保持；无法安全表达时明确失败，不采用通用 best-effort 改写。
+
+### 非流式与流式 Router
+
+- [ ] 在 `armillae-llm` 实现非流式 Router，按宿主有序 Candidate 执行预检、投影和至多一次
+      Model Call，并在首个成功 attempt 后返回。
+- [ ] 实现 RFC 0003 的默认 fallback 分类；ProviderRejected、非 retryable Transport 和
+      InvalidProviderResponse 只允许按显式 Provider/code/status policy 放行。
+- [ ] 聚合脱敏 route report，区分 preflight-only、已发送请求、最终选择、compatibility facts
+      和终止原因，不保存 credential、正文、Tool 数据或原始 Provider 响应。
+- [ ] 实现 Streaming Router：只允许在首个语义事件前 fallback，之后固定 Candidate；流中断不
+      拼接另一 Provider 响应，drop 不启动后续 Candidate。
+- [ ] 保持 Router 不实现 `LlmBridge`，不执行 Tool、不维护 history/Memory/Turn、不解析配置、
+      不创建 Factory/Registry，也不提供负载均衡或模型自动发现。
+
+### 验证与文档回归
+
+- [x] 为所有 Provider 增加已知 replay、未知 kind、畸形 value、跨 Provider not-forwarded 和
+      canonical invariance 转换测试。
+- [ ] 使用 Mock Candidate 覆盖能力不匹配、projection failure、RateLimited、Timeout、retryable
+      Transport、默认终止错误、显式 ProviderRejected policy 和候选耗尽。
+- [ ] 覆盖每次 attempt 独立投影、route report 脱敏、首事件前 fallback、首事件后固定、流中断
+      和 Future/Stream drop 取消。
+- [x] 扩展直接 Bridge projection 合约、Mock HTTP/cassette 与 tracing 脱敏测试，并复核 Secret、
+      endpoint policy 与响应正文的安全边界。
+- [ ] 在 Router 实现时扩展 Router 共享合约、Mock Candidate 和取消测试。
+- [x] 更新用户文档，说明直接 Bridge projection、同 Provider replay 和调用方手工跨 Provider
+      调度；不引入 Armillae 配置 Loader。
+- [ ] 在 Router 实现时增加非流式与 Streaming Router 示例。
+- [ ] 使用真实凭证重新验证 DeepSeek 普通多轮和 Tool continuation，并在具备两个获授权
+      Candidate 时执行默认 ignored 的跨 Provider fallback Live 门禁。
+
 ## 横切要求
 
 ### 可观测性
@@ -332,7 +400,7 @@
 - [x] 文档化 Provider 能力矩阵、兼容策略和不支持能力的错误行为。
 - [x] 文档化 Secret、endpoint、日志和 Live 测试的安全边界。
 
-## 第一阶段完成条件
+## 当前阶段完成条件
 
 - [x] 同一 `CompletionRequest`/`CompletionResponse` 协议可用于所有已支持 Provider。
 - [x] TOML、JSON 和 Rust Builder 可生成同一个 Bridge 实例。
@@ -347,7 +415,10 @@
 - [x] MockBridge 和所有真实 Adapter 均通过共享合约测试。
 - [x] 除 `armillae-llm-rig` 外没有 crate 依赖或暴露 rig 类型。
 - [x] 格式检查、Clippy、单元测试、文档构建和离线合约测试全部通过。
-- [x] `.agents/specs/llm-bridge.md`、本清单、示例和当前实现保持一致。
+- [ ] 完成 P7 canonical projection 与 Router 合约、实现和全部离线验证。
+- [ ] 完成至少 DeepSeek 同 Provider replay 的授权 Live 回归；没有凭证时保留可复现 ignored
+      门禁和未执行事实，不伪造通过证据。
+- [ ] `.agents/specs/llm-bridge.md`、本清单、示例和当前实现保持一致。
 
 ## 当前不实施的生态方向
 
@@ -356,6 +427,6 @@
 
 - Agentic 运行时：执行推进、多 ToolCall 调度、人工审批、副作用策略、Conversation Memory、
   叙事上下文、完整 Agent 和世界运行时；
-- Bridge 与 Tool 基础设施扩展：MCP、远程或录制/回放 ToolExecutor、多模态内容、Provider
-  路由、回退与负载均衡；
+- Bridge 与 Tool 基础设施扩展：MCP、远程或录制/回放 ToolExecutor、多模态内容、负载均衡、
+  Provider/model 自动发现、全局 Factory Registry 与动态插件加载；
 - 独立模型与数据能力：`armillae-embedding`、`armillae-vector-store` 与 `armillae-rag`。

@@ -458,6 +458,13 @@ fn bridge_factory_is_object_safe() {
             BridgeCapabilities::default()
         }
 
+        fn project(
+            &self,
+            _request: &CompletionRequest,
+        ) -> Result<armillae_llm::ProjectionReport, BridgeError> {
+            Ok(armillae_llm::ProjectionReport::exact("contract"))
+        }
+
         fn complete<'a>(
             &'a self,
             _request: CompletionRequest,

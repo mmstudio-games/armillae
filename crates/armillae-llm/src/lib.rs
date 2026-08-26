@@ -7,6 +7,7 @@ mod error;
 mod factory;
 #[cfg(feature = "mock")]
 pub mod mock;
+mod projection;
 
 pub use bridge::{BoxFuture, CompletionStream, LlmBridge};
 pub use capability::{BridgeCapabilities, OutputFormatCapabilities, ToolChoiceCapabilities};
@@ -18,4 +19,7 @@ pub use error::{BridgeError, ErrorMetadata};
 pub use factory::BridgeFactory;
 #[cfg(feature = "mock")]
 pub use mock::{MockBridge, MockResponse};
+pub use projection::{
+    CompatibilityAction, CompatibilityFact, MessageContentLocation, ProjectionReport,
+};
 pub use secrecy::SecretString;

@@ -5,15 +5,17 @@ use armillae_core::{
     ToolChoice as ArmillaeToolChoice, ToolDefinition as ArmillaeToolDefinition,
     ToolResult as ArmillaeToolResult, ToolResultContent as ArmillaeToolResultContent,
 };
-use armillae_llm::BridgeError;
+use armillae_llm::{
+    BridgeError, CompatibilityAction, CompatibilityFact, MessageContentLocation, ProjectionReport,
+};
 use rig_core::{
     OneOrMany,
     completion::{ToolDefinition as RigToolDefinition, Usage as RigUsage},
     message::{
-        AssistantContent as RigAssistantContent, Message as RigMessage, Text as RigText,
-        ToolCall as RigToolCall, ToolChoice as RigToolChoice, ToolFunction,
-        ToolResult as RigToolResult, ToolResultContent as RigToolResultContent,
-        UserContent as RigUserContent,
+        AssistantContent as RigAssistantContent, Message as RigMessage, Reasoning as RigReasoning,
+        ReasoningContent as RigReasoningContent, Text as RigText, ToolCall as RigToolCall,
+        ToolChoice as RigToolChoice, ToolFunction, ToolResult as RigToolResult,
+        ToolResultContent as RigToolResultContent, UserContent as RigUserContent,
     },
 };
 use serde_json::{Map, Value};
@@ -26,11 +28,13 @@ pub(crate) struct RequestParts {
     pub(crate) output_format: Option<OutputFormat>,
     pub(crate) generation: GenerationOptions,
     pub(crate) extensions: ProviderExtensions,
+    pub(crate) projection_report: ProjectionReport,
 }
 
 pub(crate) fn request_parts(
     request: ArmillaeCompletionRequest,
     defaults: &GenerationOptions,
+    target_provider: &str,
 ) -> Result<RequestParts, BridgeError> {
     let ArmillaeCompletionRequest {
         messages,
@@ -41,13 +45,19 @@ pub(crate) fn request_parts(
         extensions,
     } = request;
 
+    let (chat_history, facts) = messages_to_rig(messages, target_provider)?;
+
     Ok(RequestParts {
-        chat_history: messages_to_rig(messages)?,
+        chat_history,
         tools: tools.into_iter().map(tool_definition_to_rig).collect(),
         tool_choice: tool_choice.map(tool_choice_to_rig).transpose()?,
         output_format,
         generation: merge_generation_options(defaults, generation),
         extensions,
+        projection_report: ProjectionReport {
+            target_provider: target_provider.to_owned(),
+            facts,
+        },
     })
 }
 
@@ -69,54 +79,86 @@ pub(crate) fn merge_generation_options(
 
 pub(crate) fn messages_to_rig(
     messages: Vec<ArmillaeMessage>,
-) -> Result<OneOrMany<RigMessage>, BridgeError> {
-    let converted = messages
-        .into_iter()
-        .map(message_to_rig)
-        .collect::<Result<Vec<_>, _>>()?
-        .into_iter()
-        .flatten()
-        .collect();
+    target_provider: &str,
+) -> Result<(OneOrMany<RigMessage>, Vec<CompatibilityFact>), BridgeError> {
+    let mut converted = Vec::new();
+    let mut facts = Vec::new();
+    for (message_index, message) in messages.into_iter().enumerate() {
+        converted.extend(message_to_rig(
+            message,
+            target_provider,
+            message_index,
+            &mut facts,
+        )?);
+    }
 
-    one_or_many(
+    let messages = one_or_many(
         converted,
         "completion request must contain at least one message",
-    )
+    )?;
+    Ok((messages, facts))
 }
 
-fn message_to_rig(message: ArmillaeMessage) -> Result<Vec<RigMessage>, BridgeError> {
+fn message_to_rig(
+    message: ArmillaeMessage,
+    target_provider: &str,
+    message_index: usize,
+    facts: &mut Vec<CompatibilityFact>,
+) -> Result<Vec<RigMessage>, BridgeError> {
     if message.content.is_empty() {
         return invalid_request("messages must contain at least one content part");
     }
 
     match message.role {
-        Role::System => message
-            .content
-            .into_iter()
-            .map(|content| match content {
-                ContentPart::Text(text) => Ok(RigMessage::System { content: text.text }),
-                _ => invalid_request("system messages may contain only text"),
-            })
-            .collect(),
+        Role::System => {
+            let mut converted = Vec::new();
+            for (content_index, content) in message.content.into_iter().enumerate() {
+                match content {
+                    ContentPart::Text(text) => {
+                        converted.push(RigMessage::System { content: text.text });
+                    }
+                    ContentPart::ProviderData(data) => handle_non_assistant_provider_data(
+                        data,
+                        target_provider,
+                        message_index,
+                        content_index,
+                        facts,
+                    )?,
+                    _ => return invalid_request("system messages may contain only text"),
+                }
+            }
+            Ok(converted)
+        }
         Role::Developer => Err(BridgeError::UnsupportedCapability {
             capability: "role.developer".to_owned(),
         }),
         Role::User => {
-            let content = message
-                .content
-                .into_iter()
-                .map(user_content_to_rig)
-                .collect::<Result<Vec<_>, _>>()?;
+            let mut content = Vec::new();
+            for (content_index, item) in message.content.into_iter().enumerate() {
+                match item {
+                    ContentPart::ProviderData(data) => handle_non_assistant_provider_data(
+                        data,
+                        target_provider,
+                        message_index,
+                        content_index,
+                        facts,
+                    )?,
+                    item => content.push(user_content_to_rig(item)?),
+                }
+            }
+            if content.is_empty() {
+                return Ok(Vec::new());
+            }
             Ok(vec![RigMessage::User {
                 content: one_or_many(content, "user messages must contain compatible content")?,
             }])
         }
         Role::Assistant => {
-            let content = message
-                .content
-                .into_iter()
-                .map(assistant_content_to_rig)
-                .collect::<Result<Vec<_>, _>>()?;
+            let content =
+                assistant_contents_to_rig(message.content, target_provider, message_index, facts)?;
+            if content.is_empty() {
+                return Ok(Vec::new());
+            }
             Ok(vec![RigMessage::Assistant {
                 id: None,
                 content: one_or_many(
@@ -126,16 +168,29 @@ fn message_to_rig(message: ArmillaeMessage) -> Result<Vec<RigMessage>, BridgeErr
             }])
         }
         Role::Tool => {
-            let content = message
-                .content
-                .into_iter()
-                .map(|content| match content {
+            let mut content = Vec::new();
+            for (content_index, item) in message.content.into_iter().enumerate() {
+                match item {
                     ContentPart::ToolResult(result) => {
-                        Ok(RigUserContent::ToolResult(tool_result_to_rig(result)?))
+                        content.push(RigUserContent::ToolResult(tool_result_to_rig(result)?));
                     }
-                    _ => invalid_request("tool messages may contain only ToolResult content"),
-                })
-                .collect::<Result<Vec<_>, _>>()?;
+                    ContentPart::ProviderData(data) => handle_non_assistant_provider_data(
+                        data,
+                        target_provider,
+                        message_index,
+                        content_index,
+                        facts,
+                    )?,
+                    _ => {
+                        return invalid_request(
+                            "tool messages may contain only ToolResult content",
+                        );
+                    }
+                }
+            }
+            if content.is_empty() {
+                return Ok(Vec::new());
+            }
             Ok(vec![RigMessage::User {
                 content: one_or_many(content, "tool messages must contain ToolResult content")?,
             }])
@@ -155,30 +210,241 @@ fn user_content_to_rig(content: ContentPart) -> Result<RigUserContent, BridgeErr
         ContentPart::ToolCall(_) => {
             invalid_request("user messages cannot contain ToolCall content")
         }
-        ContentPart::ProviderData(data) => unsupported_request_provider_data(data),
+        ContentPart::ProviderData(_) => {
+            invalid_request("ProviderData must be handled by target Provider projection")
+        }
         _ => Err(BridgeError::UnsupportedCapability {
             capability: "content_part.unknown".to_owned(),
         }),
     }
 }
 
-fn assistant_content_to_rig(content: ContentPart) -> Result<RigAssistantContent, BridgeError> {
-    match content {
-        ContentPart::Text(text) => Ok(RigAssistantContent::Text(RigText::new(text.text))),
-        ContentPart::ToolCall(call) => Ok(RigAssistantContent::ToolCall(RigToolCall {
-            id: call.id.into_inner(),
-            call_id: None,
-            function: ToolFunction::new(call.name, call.arguments),
-            signature: None,
-            additional_params: None,
-        })),
-        ContentPart::ToolResult(_) => {
-            invalid_request("assistant messages cannot contain ToolResult content")
+fn assistant_contents_to_rig(
+    content: Vec<ContentPart>,
+    target_provider: &str,
+    message_index: usize,
+    facts: &mut Vec<CompatibilityFact>,
+) -> Result<Vec<RigAssistantContent>, BridgeError> {
+    let mut converted = Vec::new();
+    for (content_index, item) in content.into_iter().enumerate() {
+        match item {
+            ContentPart::Text(text) => {
+                converted.push(RigAssistantContent::Text(RigText::new(text.text)));
+            }
+            ContentPart::ToolCall(call) => {
+                converted.push(RigAssistantContent::ToolCall(RigToolCall {
+                    id: call.id.into_inner(),
+                    call_id: None,
+                    function: ToolFunction::new(call.name, call.arguments),
+                    signature: None,
+                    additional_params: None,
+                }));
+            }
+            ContentPart::ToolResult(_) => {
+                return invalid_request("assistant messages cannot contain ToolResult content");
+            }
+            ContentPart::ProviderData(data) => {
+                project_assistant_provider_data(
+                    data,
+                    target_provider,
+                    message_index,
+                    content_index,
+                    &mut converted,
+                    facts,
+                )?;
+            }
+            _ => {
+                return Err(BridgeError::UnsupportedCapability {
+                    capability: "content_part.unknown".to_owned(),
+                });
+            }
         }
-        ContentPart::ProviderData(data) => unsupported_request_provider_data(data),
-        _ => Err(BridgeError::UnsupportedCapability {
-            capability: "content_part.unknown".to_owned(),
-        }),
+    }
+    Ok(converted)
+}
+
+fn project_assistant_provider_data(
+    data: ProviderData,
+    target_provider: &str,
+    message_index: usize,
+    content_index: usize,
+    converted: &mut Vec<RigAssistantContent>,
+    facts: &mut Vec<CompatibilityFact>,
+) -> Result<(), BridgeError> {
+    if data.provider != target_provider {
+        record_not_forwarded(data, target_provider, message_index, content_index, facts);
+        return Ok(());
+    }
+
+    match data.kind.as_str() {
+        "reasoning" => {
+            let reasoning = serde_json::from_value::<RigReasoning>(data.value).map_err(|_| {
+                projection_incompatible(target_provider, message_index, content_index, "reasoning")
+            })?;
+            if !reasoning_is_replayable(target_provider, &reasoning) {
+                return Err(projection_incompatible(
+                    target_provider,
+                    message_index,
+                    content_index,
+                    "reasoning",
+                ));
+            }
+            converted.push(RigAssistantContent::Reasoning(reasoning));
+            Ok(())
+        }
+        "tool_call_metadata" => replay_tool_call_metadata(
+            data.value,
+            target_provider,
+            message_index,
+            content_index,
+            converted,
+        ),
+        _ => {
+            record_not_forwarded(data, target_provider, message_index, content_index, facts);
+            Ok(())
+        }
+    }
+}
+
+fn replay_tool_call_metadata(
+    value: Value,
+    target_provider: &str,
+    message_index: usize,
+    content_index: usize,
+    converted: &mut [RigAssistantContent],
+) -> Result<(), BridgeError> {
+    let Value::Object(mut metadata) = value else {
+        return Err(projection_incompatible(
+            target_provider,
+            message_index,
+            content_index,
+            "tool_call_metadata",
+        ));
+    };
+    let call_id = take_optional_non_empty_string(&mut metadata, "call_id").ok_or_else(|| {
+        projection_incompatible(
+            target_provider,
+            message_index,
+            content_index,
+            "tool_call_metadata",
+        )
+    })?;
+    let signature =
+        take_optional_non_empty_string(&mut metadata, "signature").ok_or_else(|| {
+            projection_incompatible(
+                target_provider,
+                message_index,
+                content_index,
+                "tool_call_metadata",
+            )
+        })?;
+    let additional_params = metadata.remove("additional_params");
+    if !metadata.is_empty()
+        || (call_id.is_none() && signature.is_none() && additional_params.is_none())
+    {
+        return Err(projection_incompatible(
+            target_provider,
+            message_index,
+            content_index,
+            "tool_call_metadata",
+        ));
+    }
+
+    let Some(RigAssistantContent::ToolCall(call)) = converted.last_mut() else {
+        return Err(projection_incompatible(
+            target_provider,
+            message_index,
+            content_index,
+            "tool_call_metadata",
+        ));
+    };
+    call.call_id = call_id;
+    call.signature = signature;
+    call.additional_params = additional_params;
+    Ok(())
+}
+
+fn reasoning_is_replayable(target_provider: &str, reasoning: &RigReasoning) -> bool {
+    if reasoning.id.is_some() || reasoning.content.is_empty() {
+        return false;
+    }
+    if target_provider == "anthropic" {
+        return true;
+    }
+    reasoning.content.iter().all(|content| {
+        matches!(
+            content,
+            RigReasoningContent::Text {
+                text,
+                signature: None,
+            } if !text.is_empty()
+        )
+    })
+}
+
+fn take_optional_non_empty_string(
+    object: &mut Map<String, Value>,
+    name: &str,
+) -> Option<Option<String>> {
+    match object.remove(name) {
+        None => Some(None),
+        Some(Value::String(value)) if !value.is_empty() => Some(Some(value)),
+        Some(_) => None,
+    }
+}
+
+fn handle_non_assistant_provider_data(
+    data: ProviderData,
+    target_provider: &str,
+    message_index: usize,
+    content_index: usize,
+    facts: &mut Vec<CompatibilityFact>,
+) -> Result<(), BridgeError> {
+    if data.provider == target_provider
+        && matches!(data.kind.as_str(), "reasoning" | "tool_call_metadata")
+    {
+        return Err(projection_incompatible(
+            target_provider,
+            message_index,
+            content_index,
+            &data.kind,
+        ));
+    }
+    record_not_forwarded(data, target_provider, message_index, content_index, facts);
+    Ok(())
+}
+
+fn record_not_forwarded(
+    data: ProviderData,
+    target_provider: &str,
+    message_index: usize,
+    content_index: usize,
+    facts: &mut Vec<CompatibilityFact>,
+) {
+    facts.push(CompatibilityFact {
+        location: MessageContentLocation {
+            message_index,
+            content_index,
+        },
+        source_provider: data.provider,
+        target_provider: target_provider.to_owned(),
+        kind: data.kind,
+        action: CompatibilityAction::NotForwarded,
+        lossy: true,
+    });
+}
+
+fn projection_incompatible(
+    target_provider: &str,
+    message_index: usize,
+    content_index: usize,
+    kind: &str,
+) -> BridgeError {
+    BridgeError::ProjectionIncompatible {
+        target_provider: target_provider.to_owned(),
+        message_index,
+        content_index,
+        kind: kind.to_owned(),
     }
 }
 
@@ -326,12 +592,6 @@ fn preserve_serialized(
     })
 }
 
-fn unsupported_request_provider_data<T>(data: ProviderData) -> Result<T, BridgeError> {
-    Err(BridgeError::UnsupportedCapability {
-        capability: format!("request_provider_data.{}.{}", data.provider, data.kind),
-    })
-}
-
 fn tool_call_id_from_rig(id: String, provider: &str) -> Result<ToolCallId, BridgeError> {
     ToolCallId::new(id).map_err(|_| BridgeError::InvalidProviderResponse {
         message: "Provider returned an empty ToolCall ID".to_owned(),
@@ -366,7 +626,7 @@ mod tests {
         GenerationOptions, Message, ProviderData, ProviderExtensions, Role, ToolCall, ToolCallId,
         ToolResult, ToolResultContent,
     };
-    use armillae_llm::BridgeError;
+    use armillae_llm::{BridgeError, CompatibilityAction};
     use rig_core::message::{
         AssistantContent as RigAssistantContent, Message as RigMessage, ToolCall as RigToolCall,
         ToolFunction, ToolResultContent as RigToolResultContent, UserContent as RigUserContent,
@@ -435,7 +695,7 @@ mod tests {
             ..CompletionRequest::default()
         };
 
-        let parts = request_parts(request, &GenerationOptions::default())
+        let parts = request_parts(request, &GenerationOptions::default(), "openai")
             .expect("portable assistant history must convert");
         let message = parts
             .chat_history
@@ -473,7 +733,7 @@ mod tests {
             ..CompletionRequest::default()
         };
 
-        let parts = request_parts(request, &GenerationOptions::default())
+        let parts = request_parts(request, &GenerationOptions::default(), "openai")
             .expect("OpenAI-compatible ToolResult errors must not be rejected");
         let message = parts
             .chat_history
@@ -512,7 +772,7 @@ mod tests {
         };
 
         assert_eq!(
-            request_parts(request, &GenerationOptions::default())
+            request_parts(request, &GenerationOptions::default(), "openai")
                 .expect_err("Developer role must not be rewritten"),
             BridgeError::UnsupportedCapability {
                 capability: "role.developer".to_owned(),
@@ -521,26 +781,157 @@ mod tests {
     }
 
     #[test]
-    fn request_provider_data_is_rejected_instead_of_dropped() {
+    fn same_provider_reasoning_round_trips_for_every_supported_target() {
+        for provider in [
+            "openai",
+            "openai-compatible",
+            "deepseek",
+            "minimax",
+            "moonshot",
+            "anthropic",
+            "ollama",
+        ] {
+            let canonical = assistant_content_from_rig(
+                rig_core::OneOrMany::one(RigAssistantContent::reasoning("consider this")),
+                provider,
+            )
+            .expect("reasoning response content must normalize");
+            let request = CompletionRequest {
+                messages: vec![Message::assistant(
+                    canonical.into_iter().map(ContentPart::from).collect(),
+                )],
+                ..CompletionRequest::default()
+            };
+
+            let parts = request_parts(request, &GenerationOptions::default(), provider)
+                .expect("same-Provider reasoning must project");
+            assert!(parts.projection_report.is_exact());
+            let RigMessage::Assistant { content, .. } = parts
+                .chat_history
+                .into_iter()
+                .next()
+                .expect("projected assistant message must remain")
+            else {
+                panic!("expected assistant message for {provider}");
+            };
+            assert!(matches!(
+                content.into_iter().next(),
+                Some(RigAssistantContent::Reasoning(reasoning))
+                    if reasoning.display_text() == "consider this"
+            ));
+        }
+    }
+
+    #[test]
+    fn foreign_and_unknown_provider_data_are_reported_without_mutating_canonical_history() {
         let request = CompletionRequest {
-            messages: vec![Message::new(
-                Role::Assistant,
-                vec![ContentPart::ProviderData(ProviderData {
-                    provider: "openai".to_owned(),
+            messages: vec![
+                Message::assistant(vec![
+                    ContentPart::text("visible"),
+                    ContentPart::ProviderData(ProviderData {
+                        provider: "deepseek".to_owned(),
+                        kind: "reasoning".to_owned(),
+                        value: serde_json::to_value(rig_core::message::Reasoning::new("private"))
+                            .expect("fixture reasoning must serialize"),
+                    }),
+                    ContentPart::ProviderData(ProviderData {
+                        provider: "anthropic".to_owned(),
+                        kind: "future_private_block".to_owned(),
+                        value: json!({ "opaque": true }),
+                    }),
+                ]),
+                Message::user("continue"),
+            ],
+            ..CompletionRequest::default()
+        };
+        let original = request.clone();
+
+        let parts = request_parts(request, &GenerationOptions::default(), "anthropic")
+            .expect("foreign and unknown ProviderData must not block projection");
+
+        assert_eq!(original.messages[0].content.len(), 3);
+        assert_eq!(parts.projection_report.facts.len(), 2);
+        assert!(parts.projection_report.facts.iter().all(|fact| {
+            fact.target_provider == "anthropic"
+                && fact.action == CompatibilityAction::NotForwarded
+                && fact.lossy
+        }));
+        let RigMessage::Assistant { content, .. } = parts
+            .chat_history
+            .into_iter()
+            .next()
+            .expect("portable assistant content must remain")
+        else {
+            panic!("expected assistant message");
+        };
+        let projected = content.into_iter().collect::<Vec<_>>();
+        assert_eq!(projected.len(), 1);
+        assert!(matches!(&projected[0], RigAssistantContent::Text(text) if text.text == "visible"));
+    }
+
+    #[test]
+    fn malformed_same_provider_replay_data_is_projection_incompatible() {
+        let request = CompletionRequest {
+            messages: vec![Message::assistant(vec![ContentPart::ProviderData(
+                ProviderData {
+                    provider: "deepseek".to_owned(),
                     kind: "reasoning".to_owned(),
-                    value: json!({ "encrypted": "opaque" }),
-                })],
-            )],
+                    value: json!({ "not": "rig reasoning" }),
+                },
+            )])],
             ..CompletionRequest::default()
         };
 
         assert_eq!(
-            request_parts(request, &GenerationOptions::default())
-                .expect_err("unknown request ProviderData must be explicit"),
-            BridgeError::UnsupportedCapability {
-                capability: "request_provider_data.openai.reasoning".to_owned(),
+            request_parts(request, &GenerationOptions::default(), "deepseek")
+                .expect_err("malformed known replay data must fail projection"),
+            BridgeError::ProjectionIncompatible {
+                target_provider: "deepseek".to_owned(),
+                message_index: 0,
+                content_index: 0,
+                kind: "reasoning".to_owned(),
             }
         );
+    }
+
+    #[test]
+    fn same_provider_tool_call_metadata_replays_onto_the_preceding_call() {
+        let canonical = assistant_content_from_rig(
+            rig_core::OneOrMany::one(RigAssistantContent::ToolCall(RigToolCall {
+                id: "call-1".to_owned(),
+                call_id: Some("provider-call-1".to_owned()),
+                function: ToolFunction::new("lookup".to_owned(), json!({ "q": "armillae" })),
+                signature: Some("signature-1".to_owned()),
+                additional_params: Some(json!({ "future": true })),
+            })),
+            "openai",
+        )
+        .expect("ToolCall metadata must normalize");
+        let request = CompletionRequest {
+            messages: vec![Message::assistant(
+                canonical.into_iter().map(ContentPart::from).collect(),
+            )],
+            ..CompletionRequest::default()
+        };
+
+        let parts = request_parts(request, &GenerationOptions::default(), "openai")
+            .expect("same-Provider ToolCall metadata must replay");
+        assert!(parts.projection_report.is_exact());
+        let RigMessage::Assistant { content, .. } = parts
+            .chat_history
+            .into_iter()
+            .next()
+            .expect("assistant ToolCall must remain")
+        else {
+            panic!("expected assistant message");
+        };
+        let Some(RigAssistantContent::ToolCall(call)) = content.into_iter().next() else {
+            panic!("expected replayed ToolCall");
+        };
+        assert_eq!(call.id, "call-1");
+        assert_eq!(call.call_id.as_deref(), Some("provider-call-1"));
+        assert_eq!(call.signature.as_deref(), Some("signature-1"));
+        assert_eq!(call.additional_params, Some(json!({ "future": true })));
     }
 
     #[test]

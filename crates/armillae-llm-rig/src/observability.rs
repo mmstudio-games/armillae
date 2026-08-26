@@ -1,9 +1,31 @@
 use std::time::Instant;
 
 use armillae_core::{AssistantContent, CompletionEvent, CompletionResponse, TokenUsage};
-use armillae_llm::{BridgeError, CompletionStream, ErrorMetadata};
+use armillae_llm::{
+    BridgeError, CompatibilityAction, CompletionStream, ErrorMetadata, ProjectionReport,
+};
 use futures_util::{StreamExt, stream};
 use tracing::{Span, field};
+
+pub(crate) fn record_projection(report: &ProjectionReport) {
+    for fact in &report.facts {
+        let action = match fact.action {
+            CompatibilityAction::NotForwarded => "not_forwarded",
+            _ => "unknown",
+        };
+        tracing::info!(
+            target: "armillae::llm",
+            source_provider = %fact.source_provider,
+            target_provider = %fact.target_provider,
+            provider_data_kind = %fact.kind,
+            compatibility_action = action,
+            lossy = fact.lossy,
+            message_index = fact.location.message_index,
+            content_index = fact.location.content_index,
+            "LLM request compatibility action"
+        );
+    }
+}
 
 pub(crate) struct InvocationObservation {
     span: Span,
@@ -196,6 +218,7 @@ fn error_category(error: &BridgeError) -> &'static str {
         BridgeError::InvalidConfiguration { .. } => "invalid_configuration",
         BridgeError::UnsupportedCapability { .. } => "unsupported_capability",
         BridgeError::InvalidRequest { .. } => "invalid_request",
+        BridgeError::ProjectionIncompatible { .. } => "projection_incompatible",
         BridgeError::Authentication { .. } => "authentication",
         BridgeError::PermissionDenied { .. } => "permission_denied",
         BridgeError::RateLimited { .. } => "rate_limited",
@@ -222,6 +245,7 @@ fn error_metadata(error: &BridgeError) -> Option<&ErrorMetadata> {
         BridgeError::InvalidConfiguration { .. }
         | BridgeError::UnsupportedCapability { .. }
         | BridgeError::InvalidRequest { .. }
+        | BridgeError::ProjectionIncompatible { .. }
         | BridgeError::Cancelled => None,
         _ => None,
     }
@@ -242,12 +266,15 @@ mod tests {
         AssistantContent, CompletionEvent, CompletionResponse, ProviderData, TextContent,
         TokenUsage,
     };
-    use armillae_llm::{BridgeError, ErrorMetadata};
+    use armillae_llm::{
+        BridgeError, CompatibilityAction, CompatibilityFact, ErrorMetadata, MessageContentLocation,
+        ProjectionReport,
+    };
     use futures::{StreamExt, executor::block_on, stream};
     use serde_json::json;
     use tracing_subscriber::fmt::format::FmtSpan;
 
-    use super::{InvocationObservation, observe_stream};
+    use super::{InvocationObservation, observe_stream, record_projection};
 
     #[derive(Clone, Default)]
     struct SharedWriter {
@@ -304,6 +331,20 @@ mod tests {
             .finish();
 
         tracing::subscriber::with_default(subscriber, || {
+            record_projection(&ProjectionReport {
+                target_provider: "anthropic".to_owned(),
+                facts: vec![CompatibilityFact {
+                    location: MessageContentLocation {
+                        message_index: 1,
+                        content_index: 2,
+                    },
+                    source_provider: "deepseek".to_owned(),
+                    target_provider: "anthropic".to_owned(),
+                    kind: "reasoning".to_owned(),
+                    action: CompatibilityAction::NotForwarded,
+                    lossy: true,
+                }],
+            });
             let mut successful = InvocationObservation::new("openai", "gpt-test", false, 2);
             successful.finish_completion(&Ok(CompletionResponse {
                 id: Some("request-1".to_owned()),
@@ -342,6 +383,9 @@ mod tests {
         assert!(output.contains("tool_definition_count=2"));
         assert!(output.contains("input_tokens=3"));
         assert!(output.contains("error_category=\"provider_rejected\""));
+        assert!(output.contains("compatibility_action=\"not_forwarded\""));
+        assert!(output.contains("source_provider=deepseek"));
+        assert!(output.contains("target_provider=anthropic"));
         for secret in [
             "response-secret-marker",
             "provider-data-secret-marker",

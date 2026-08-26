@@ -49,7 +49,17 @@ fn validate_config(
     let credential = credential.ok_or_else(|| BridgeError::InvalidConfiguration {
         message: format!("{} requires a credential", config.provider),
     })?;
-    let request_mapper = OpenAiRequestMapper::new(config.provider_options.clone())?;
+    let request_mapper = match config.provider.as_str() {
+        "openai" => OpenAiRequestMapper::new(config.provider_options.clone())?,
+        "openai-compatible" => {
+            OpenAiRequestMapper::for_openai_compatible(config.provider_options.clone())?
+        }
+        provider => {
+            return invalid_configuration(format!(
+                "OpenAI provider module does not support provider: {provider}"
+            ));
+        }
+    };
 
     Ok((config, credential, request_mapper))
 }

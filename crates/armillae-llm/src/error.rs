@@ -43,6 +43,16 @@ pub enum BridgeError {
     #[error("invalid request: {message}")]
     InvalidRequest { message: String },
 
+    #[error(
+        "request content at message {message_index}, content {content_index} is incompatible with {target_provider} projection: {kind}"
+    )]
+    ProjectionIncompatible {
+        target_provider: String,
+        message_index: usize,
+        content_index: usize,
+        kind: String,
+    },
+
     #[error("authentication failed")]
     Authentication { metadata: ErrorMetadata },
 

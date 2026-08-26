@@ -3,7 +3,8 @@
 > 状态：Draft
 > 更新日期：2026-08-25
 > 设计入口：[Armillae 设计索引](../DESIGN.md)
-> 下层能力边界：[LLM Bridge 与 Tool Executor Spec](../specs/llm-bridge.md)
+> 下层能力边界：[LLM Bridge、Router 与 Tool Executor Spec](../specs/llm-bridge.md)
+> LLM 路由边界：[RFC 0003：LLM canonical 投影与模型 fallback](0003-llm-projection-fallback.md)
 > 模拟基础设施：[RFC 0002：Simulate 与可替换 ECS 后端](0002-simulate.md)
 > 生效规范：[Armillae Simulate Spec](../specs/simulate.md)
 
@@ -19,11 +20,13 @@ Armillae 的长期目标是提供面向 Agentic 叙事的通用运行时，可�
 
 运行时属于 Armillae 生态，但不是 LLM Bridge 的延伸：
 
-- 运行时可以把 `LlmBridge` 和 `ToolExecutor` 作为可选能力使用；
+- 运行时可以把 `LlmBridge`、`LlmRouter` 和 `ToolExecutor` 作为可选能力使用；
 - 运行时不能要求 Bridge 自动执行 Tool、维护 Memory 或推进 Turn；
 - Bridge 和 Tool 层不能反向依赖运行时；
 - 叙事与世界运行不应以某个 Provider、模型 SDK 或 Rig 类型作为持久化协议；
 - 是否调用 LLM 以及如何处理多个 ToolCall，由运行时或其上层策略决定。
+- Provider projection、Candidate attempt 和 model fallback 由 RFC 0003 的运行时无关 LLM
+  基础设施承担，运行时不得复制 Provider codec 或把 Provider wire 数据作为状态协议。
 
 当前阶段只整理场景和冻结设计，不授权创建运行时 crate 或实现功能。
 
@@ -41,12 +44,16 @@ LLM Bridge 提供一次无状态 Model Call；Tool Executor 提供一次显式 T
 
 ```text
 Agentic 叙事运行时
-  ├── 可选：LlmBridge
+  ├── 可选：直接使用 LlmBridge
+  ├── 可选：LlmRouter
+  │     └── 一个或多个 LlmBridge
   └── 可选：ToolExecutor
 ```
 
 这不预先决定运行时必须存在名为 `Turn` 的核心类型，也不预先决定自动 Tool Loop、Memory、
-RAG 或工作流引擎的实现方式。
+RAG 或工作流引擎的实现方式。运行时可以提供 Candidate 列表和 fallback policy，但 Router 的
+canonical projection、错误分类、attempt report、流式切换和取消语义由 RFC 0003 与 LLM Spec
+统一定义，不随叙事领域模型分叉。
 
 ## 3. 设计输入
 
@@ -77,7 +84,7 @@ RAG 或工作流引擎的实现方式。
 3. 未来状态子系统冻结提交、存档、分支和重放语义后，Agent 生命周期如何组合而不复制它们？
 4. 多 Agent 的推进、暂停、取消、优先级和公平性由哪一层负责？
 5. Tool 与外部系统副作用如何审批、幂等、重试、补偿和审计？
-6. LLM 不可用、输出无效或执行被中断时，运行时如何保持可恢复状态？
+6. LLM Router 已按策略耗尽 Candidate、输出无效或执行被中断时，运行时如何保持可恢复状态？
 7. Memory、Embedding、Vector Store 和 RAG 是运行时核心协议、可选能力还是应用层策略？
 8. 端到端验收以哪些叙事场景、确定性要求、延迟与可观测事实为准？
 

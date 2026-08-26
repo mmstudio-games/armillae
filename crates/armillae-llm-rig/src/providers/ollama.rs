@@ -481,6 +481,74 @@ mod tests {
     }
 
     #[test]
+    fn thinking_round_trips_into_same_provider_history() {
+        let response = json!({
+            "model": "qwen3:8b",
+            "created_at": "2026-08-26T00:00:00Z",
+            "message": {
+                "role": "assistant",
+                "thinking": "private plan",
+                "content": "visible answer"
+            },
+            "done": true,
+            "done_reason": "stop",
+            "total_duration": 100,
+            "load_duration": 10,
+            "prompt_eval_count": 4,
+            "prompt_eval_duration": 20,
+            "eval_count": 3,
+            "eval_duration": 70
+        });
+        let (config, credential) =
+            resolved_config("ollama", Some("http://ollama.test"), false, json!({}));
+        futures::executor::block_on(async {
+            let http_client = RecordingHttpClient::new(response.to_string());
+            let (config, credential, request_mapper) =
+                validate_config(config, credential).expect("Ollama reasoning config must validate");
+            let bridge = create_validated(config, credential, request_mapper, http_client.clone())
+                .expect("Ollama reasoning bridge must construct");
+
+            let first = bridge
+                .complete(CompletionRequest {
+                    messages: vec![Message::user("think")],
+                    ..CompletionRequest::default()
+                })
+                .await
+                .expect("Ollama thinking response must normalize");
+            let continuation = CompletionRequest {
+                messages: vec![
+                    Message::user("think"),
+                    first.as_assistant_message(),
+                    Message::user("continue"),
+                ],
+                ..CompletionRequest::default()
+            };
+
+            assert!(
+                bridge
+                    .project(&continuation)
+                    .expect("Ollama thinking must project")
+                    .is_exact()
+            );
+            bridge
+                .complete(continuation)
+                .await
+                .expect("Ollama thinking history must remain callable");
+
+            let requests = http_client.requests();
+            let body: Value = serde_json::from_slice(
+                &requests
+                    .get(1)
+                    .expect("Ollama continuation must issue a second request")
+                    .body,
+            )
+            .expect("Ollama continuation request must be JSON");
+            assert_eq!(body["messages"][1]["thinking"], "private plan");
+            assert_eq!(body["messages"][1]["content"], "visible answer");
+        });
+    }
+
+    #[test]
     fn unsupported_or_unmappable_requests_fail_before_transport() {
         let (config, credential) =
             resolved_config("ollama", Some("http://ollama.test"), false, json!({}));

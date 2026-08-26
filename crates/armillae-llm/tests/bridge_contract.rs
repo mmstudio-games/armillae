@@ -6,7 +6,7 @@ use armillae_core::{
 };
 use armillae_llm::{
     BoxFuture, BridgeCapabilities, BridgeError, CompletionStream, ErrorMetadata, LlmBridge,
-    OutputFormatCapabilities, ToolChoiceCapabilities,
+    OutputFormatCapabilities, ProjectionReport, ToolChoiceCapabilities,
 };
 use futures_executor::block_on;
 use futures_util::stream;
@@ -17,6 +17,11 @@ struct ContractBridge;
 impl LlmBridge for ContractBridge {
     fn capabilities(&self) -> BridgeCapabilities {
         BridgeCapabilities::all()
+    }
+
+    fn project(&self, request: &CompletionRequest) -> Result<ProjectionReport, BridgeError> {
+        self.capabilities().validate_request(request)?;
+        Ok(ProjectionReport::exact("contract"))
     }
 
     fn complete<'a>(
