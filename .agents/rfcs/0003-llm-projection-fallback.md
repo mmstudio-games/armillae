@@ -102,6 +102,14 @@ Adapter 必须按目标 Provider 将内容分为：
 ProviderData 保留在 canonical history 中，但不注入无关目标 Provider 的 wire request，并产生
 `not_forwarded` compatibility fact。
 
+Rig 到 Armillae 的共享响应边界必须冻结 reasoning 的语义空值：当 Rig Reasoning 没有 Provider
+ID，且只包含没有签名的空 Text block，不含密文、redacted data、summary 或非空文本时，非流式
+响应和流式聚合统一将其归一化为 reasoning 缺席。该值没有可观察或可回放语义，保留它只会使
+canonical history 依赖 SDK 的空值差异。该规则不是通用空值清洗器，不得应用于未知
+ProviderData、签名/加密 reasoning、ToolCall metadata 或标准内容；Provider Adapter 仍可在有
+协议证据时增加更窄的规则，但不能放宽共享谓词。共享转换测试必须覆盖所有当前 Provider 标签、
+带 ID/签名/密文/redacted/summary 的保留以及非流式与流式一致性。
+
 ### 6.2 不可安全投影的数据
 
 标准字段无法保持其语义、同 Provider 已知 replay data 结构损坏、ToolCall/ToolResult 关联不
@@ -272,6 +280,10 @@ Streaming Router 可以在创建流失败或首个语义事件前按策略选择
 
 - `response.as_assistant_message()` 对同一个 Bridge 产生的已知 replay data 可以进入下一请求；
 - DeepSeek reasoning + ToolCall + ToolResult continuation 不因 ProviderData 本地失败；
+- DeepSeek wire `reasoning_content: ""` 归一化为无 reasoning，工具完成后的可见回复仍可进入
+  下一轮请求；
+- 所有当前 Provider 经共享转换产生的纯空无状态 reasoning 均归一化为缺席，带 ID、签名、
+  密文、redacted data 或 summary 的 Provider 状态保持不变；
 - 跨 Provider fallback 不修改 canonical history，也不把源 Provider 私有数据发送给目标；
 - 标准 Text、Role、ToolCall、ToolResult、ID 和内容顺序在每次 projection 中保持；
 - 未投影和兼容转换都有结构化、脱敏的 compatibility fact；

@@ -546,6 +546,9 @@ pub(crate) fn assistant_content_from_rig(
                 }
             }
             RigAssistantContent::Reasoning(reasoning) => {
+                if reasoning_is_semantically_empty(&reasoning) {
+                    continue;
+                }
                 converted.push(provider_data(
                     provider,
                     "reasoning",
@@ -562,6 +565,17 @@ pub(crate) fn assistant_content_from_rig(
         }
     }
     Ok(converted)
+}
+
+pub(crate) fn reasoning_is_semantically_empty(reasoning: &RigReasoning) -> bool {
+    reasoning.id.is_none()
+        && matches!(
+            reasoning.content.as_slice(),
+            [RigReasoningContent::Text {
+                text,
+                signature: None,
+            }] if text.is_empty()
+        )
 }
 
 pub(crate) fn usage_from_rig(usage: RigUsage) -> Option<TokenUsage> {
@@ -627,9 +641,13 @@ mod tests {
         ToolResult, ToolResultContent,
     };
     use armillae_llm::{BridgeError, CompatibilityAction};
-    use rig_core::message::{
-        AssistantContent as RigAssistantContent, Message as RigMessage, ToolCall as RigToolCall,
-        ToolFunction, ToolResultContent as RigToolResultContent, UserContent as RigUserContent,
+    use rig_core::{
+        OneOrMany,
+        message::{
+            AssistantContent as RigAssistantContent, Message as RigMessage,
+            Reasoning as RigReasoning, ToolCall as RigToolCall, ToolFunction,
+            ToolResultContent as RigToolResultContent, UserContent as RigUserContent,
+        },
     };
     use serde_json::json;
 
@@ -673,6 +691,81 @@ mod tests {
         );
 
         assert_eq!(merged.stop, ["default"]);
+    }
+
+    #[test]
+    fn semantically_empty_reasoning_is_absent_for_every_supported_provider() {
+        for provider in [
+            "openai",
+            "openai-compatible",
+            "deepseek",
+            "minimax",
+            "moonshot",
+            "anthropic",
+            "ollama",
+        ] {
+            let converted = assistant_content_from_rig(
+                OneOrMany::one(RigAssistantContent::Reasoning(RigReasoning::new(""))),
+                provider,
+            )
+            .unwrap_or_else(|error| panic!("{provider} empty reasoning must normalize: {error}"));
+
+            assert!(
+                converted.is_empty(),
+                "{provider} empty reasoning must not enter canonical history"
+            );
+        }
+    }
+
+    #[test]
+    fn state_bearing_and_noncanonical_empty_reasoning_are_preserved() {
+        let reasonings = vec![
+            RigReasoning::new("").with_id("reasoning-id".to_owned()),
+            RigReasoning::new_with_signature("", Some("signature".to_owned())),
+            RigReasoning::encrypted(""),
+            RigReasoning::redacted(""),
+            RigReasoning::summaries(vec![String::new()]),
+            RigReasoning::multi(vec![String::new(), String::new()]),
+            serde_json::from_value(json!({ "id": null, "content": [] }))
+                .expect("empty reasoning fixture must deserialize"),
+        ];
+        let choice = OneOrMany::many(reasonings.into_iter().map(RigAssistantContent::Reasoning))
+            .expect("meaningful reasoning fixtures must be non-empty");
+
+        let converted = assistant_content_from_rig(choice, "anthropic")
+            .expect("state-bearing reasoning must normalize");
+
+        assert_eq!(converted.len(), 7);
+        assert!(converted.iter().all(|content| matches!(
+            content,
+            ArmillaeAssistantContent::ProviderData(data)
+                if data.provider == "anthropic" && data.kind == "reasoning"
+        )));
+        assert!(matches!(
+            &converted[0],
+            ArmillaeAssistantContent::ProviderData(data)
+                if data.value["id"] == "reasoning-id"
+        ));
+        assert!(matches!(
+            &converted[1],
+            ArmillaeAssistantContent::ProviderData(data)
+                if data.value["content"][0]["content"]["signature"] == "signature"
+        ));
+        assert!(matches!(
+            &converted[2],
+            ArmillaeAssistantContent::ProviderData(data)
+                if data.value["content"][0]["type"] == "encrypted"
+        ));
+        assert!(matches!(
+            &converted[3],
+            ArmillaeAssistantContent::ProviderData(data)
+                if data.value["content"][0]["type"] == "redacted"
+        ));
+        assert!(matches!(
+            &converted[4],
+            ArmillaeAssistantContent::ProviderData(data)
+                if data.value["content"][0]["type"] == "summary"
+        ));
     }
 
     #[test]

@@ -146,9 +146,9 @@ fn finish_reason(reason: &str) -> FinishReason {
 #[cfg(test)]
 mod tests {
     use armillae_core::{
-        AssistantContent, CompletionRequest, CompletionResponse, FinishReason, Message,
-        OutputFormat, TextContent, TokenUsage, ToolChoice, ToolDefinition, ToolResult,
-        ToolResultContent,
+        AssistantContent, CompletionRequest, CompletionResponse, ContentPart, FinishReason,
+        Message, OutputFormat, TextContent, TokenUsage, ToolCall, ToolCallId, ToolChoice,
+        ToolDefinition, ToolResult, ToolResultContent,
     };
     use armillae_llm::{
         BridgeError,
@@ -506,6 +506,113 @@ mod tests {
     }
 
     #[test]
+    fn empty_reasoning_after_tool_result_is_absent_from_followup_history() {
+        let (config, credential) =
+            resolved_config("deepseek", Some("http://deepseek.test"), true, json!({}));
+        futures::executor::block_on(async {
+            let http_client = RecordingHttpClient::new(
+                json!({
+                    "id": "chatcmpl-deepseek-tool-result",
+                    "model": "deepseek-v4-flash",
+                    "system_fingerprint": null,
+                    "choices": [{
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "content": "The lookup returned a local fact.",
+                            "reasoning_content": ""
+                        },
+                        "logprobs": null,
+                        "finish_reason": "stop"
+                    }],
+                    "usage": {
+                        "prompt_tokens": 12,
+                        "completion_tokens": 6,
+                        "prompt_cache_hit_tokens": 0,
+                        "prompt_cache_miss_tokens": 12,
+                        "total_tokens": 18
+                    }
+                })
+                .to_string(),
+            );
+            let (config, credential, request_mapper) =
+                validate_named_config(config, credential, "deepseek", "DeepSeek")
+                    .expect("DeepSeek empty reasoning config must validate");
+            let bridge = create_validated(config, credential, request_mapper, http_client.clone())
+                .expect("DeepSeek empty reasoning bridge must construct");
+            let call_id =
+                ToolCallId::new("call-lookup").expect("fixture ToolCall ID must be non-empty");
+            let tool_exchange = vec![
+                Message::user("look up the project"),
+                Message::assistant(vec![ContentPart::ToolCall(ToolCall {
+                    id: call_id.clone(),
+                    name: "lookup_project_fact".to_owned(),
+                    arguments: json!({ "topic": "armillae" }),
+                })]),
+                Message::tool_result(ToolResult {
+                    call_id,
+                    content: vec![ToolResultContent::Json {
+                        value: json!({ "fact": "local" }),
+                    }],
+                    is_error: false,
+                }),
+            ];
+
+            let response = bridge
+                .complete(CompletionRequest {
+                    messages: tool_exchange.clone(),
+                    tools: vec![lookup_tool_definition()],
+                    tool_choice: Some(ToolChoice::None),
+                    ..CompletionRequest::default()
+                })
+                .await
+                .expect("DeepSeek empty reasoning response must normalize");
+
+            assert_eq!(
+                response.content,
+                vec![AssistantContent::Text(TextContent::new(
+                    "The lookup returned a local fact."
+                ))]
+            );
+
+            let mut followup_messages = tool_exchange;
+            followup_messages.push(response.as_assistant_message());
+            followup_messages.push(Message::user("what arguments did you use?"));
+            let followup = CompletionRequest {
+                messages: followup_messages,
+                tools: vec![lookup_tool_definition()],
+                tool_choice: Some(ToolChoice::Auto),
+                ..CompletionRequest::default()
+            };
+
+            assert!(
+                bridge
+                    .project(&followup)
+                    .expect("empty DeepSeek reasoning must not poison followup projection")
+                    .is_exact()
+            );
+            bridge
+                .complete(followup)
+                .await
+                .expect("followup after empty DeepSeek reasoning must remain callable");
+
+            let requests = http_client.requests();
+            let followup_body: Value = serde_json::from_slice(
+                &requests
+                    .get(1)
+                    .expect("DeepSeek followup must issue a second request")
+                    .body,
+            )
+            .expect("DeepSeek followup request must be JSON");
+            assert_eq!(
+                followup_body["messages"][3]["content"],
+                "The lookup returned a local fact."
+            );
+            assert_eq!(followup_body["messages"][3].get("reasoning_content"), None);
+        });
+    }
+
+    #[test]
     fn unsupported_tool_choices_and_json_schema_fail_before_transport() {
         let (config, credential) =
             resolved_config("deepseek", Some("http://deepseek.test"), true, json!({}));
@@ -621,6 +728,18 @@ mod tests {
             name: "weather".to_owned(),
             description: "Get weather".to_owned(),
             input_schema: json!({ "type": "object" }),
+        }
+    }
+
+    fn lookup_tool_definition() -> ToolDefinition {
+        ToolDefinition {
+            name: "lookup_project_fact".to_owned(),
+            description: "Look up a local project fact".to_owned(),
+            input_schema: json!({
+                "type": "object",
+                "properties": { "topic": { "type": "string" } },
+                "required": ["topic"]
+            }),
         }
     }
 

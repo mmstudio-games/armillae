@@ -1062,6 +1062,13 @@ ToolCall、ToolResult、ToolChoice、Schema 和安全语义仍可表达，目标
 无法保持或同 Provider 已知 replay data 结构损坏；外部/未知 ProviderData 使用
 `NotForwarded` fact，不得借此错误阻断直接 Bridge。
 
+Rig 响应进入 Armillae canonical 协议前必须应用统一的 reasoning 空值语义。仅当 Rig Reasoning
+没有 ID，且内容恰好是一个无签名的空 Text block 时，非流式转换与流式聚合将其视为 reasoning
+缺席；多空 Text block、空 content list 等非规范结构继续保留并在回放时接受既有结构校验，不能
+借空值规则掩盖 Provider 缺陷。带 ID、签名、Encrypted、Redacted、Summary 或任何非空文本的
+Reasoning 必须原样保留。该规则适用于所有当前及未来 Rig Provider 标签，不产生
+`NotForwarded` fact，因为 canonical history 从未获得有语义的 Provider 数据。
+
 ### 7.8 LLM Router 与 Model Fallback
 
 Router 接收有序、宿主构造的 Candidate 列表。Candidate 至少具有宿主稳定 ID 和
@@ -1439,6 +1446,10 @@ reasoning 继续按公共转换规则进入 `ProviderData { provider = "deepseek
 Mapper 必须把结构合法的同 Provider reasoning 还原为 Rig Reasoning，使普通多轮和
 reasoning + ToolCall + ToolResult continuation 可以回放。不同 Provider、未知 kind 或畸形
 DeepSeek reasoning 分别按 7.7 节执行 not-forwarded 或 projection failure，不得静默丢弃。
+DeepSeek wire 明确下发的空 `reasoning_content: ""` 没有 replay 语义，且 Rig 请求编码不会将其
+写回；它必须通过 7.7 节共享 canonical 空值规则归一化为缺席，而不是由 DeepSeek Adapter
+维护独立清洗逻辑。Provider Mock HTTP 测试仍须覆盖空 reasoning 与可见文本并存，以及该
+assistant 回复进入下一轮请求的回归场景。
 三个 Provider 的 OpenAI-compatible ToolResult 都沿用本节记录的 `is_error` 省略策略。
 
 Anthropic 使用 rig 原生 Messages Client，默认 endpoint 为 `https://api.anthropic.com`，请求

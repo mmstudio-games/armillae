@@ -146,6 +146,12 @@ the report contains a content-free `NotForwarded` fact. Malformed private data t
 Provider claims to understand returns `BridgeError::ProjectionIncompatible` instead of being
 dropped.
 
+The shared Rig response boundary treats one unsigned empty reasoning text block with no Provider ID
+as no reasoning for every Provider. DeepSeek `reasoning_content: ""`, for example, therefore never
+enters canonical history. Reasoning with an ID, signature, encrypted/redacted payload, summary, or
+non-empty text is preserved; unknown and malformed Provider data remains subject to the normal
+preservation and projection checks.
+
 `LlmRouter` is not required for this behavior. A host may manually call `project` and `complete` on
 another Bridge using the same original request. The target Bridge performs its own projection;
 the host remains responsible for choosing which errors permit another attempt and must not combine

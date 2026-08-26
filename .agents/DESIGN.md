@@ -67,7 +67,10 @@ attempt，但不执行 Tool、不维护 Conversation Memory，也不改变 canon
 
 1. 按 RFC 0003 和 LLM Bridge Active Spec 先完成所有已支持 Adapter 的直接 Bridge Provider
    projection：同 Provider 回放已知私有数据，跨 Provider 只生成目标 wire projection，不修改
-   canonical 数据，并让调用方取得结构化 compatibility facts。
+   canonical 数据，并让调用方取得结构化 compatibility facts。Rig 响应中不含 ID、签名、
+   密文、redacted data、summary 或非空文本的纯空 reasoning，必须在共享 canonical 响应边界
+   归一化为缺席，不能进入 history 并阻断后续请求；未知、带状态或其他有语义的私有数据不得
+   使用该规则。
 2. 通过直接 Bridge 合约与 Live 回归证明 projection 闭环后，再实现 host-owned fallback Router；
    Router 只复用 Adapter projection，不成为单 Provider 正常工作的前置条件。
 3. 重新执行 DeepSeek 多轮与 Tool continuation Live 验证，再完成默认 ignored 的 OpenAI 协议

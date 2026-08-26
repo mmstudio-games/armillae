@@ -334,6 +334,10 @@
 
 - [x] 修复 DeepSeek reasoning 的响应解码与同 Provider 请求回放，覆盖普通多轮及
       reasoning + ToolCall + ToolResult continuation。
+- [x] 在共享 Rig → Armillae 非流式转换和流式聚合边界将无 ID/签名/密文等状态的纯空
+      reasoning 归一化为缺席；覆盖所有当前 Provider 标签、DeepSeek Tool continuation、
+      Anthropic 空文本签名以及带 ID/加密/redacted/summary 的保留，不放宽畸形 ProviderData
+      校验。
 - [x] 审计 Anthropic signed reasoning；能由 Rig 安全还原时完成回放，无法还原时返回结构化
       projection failure，不得删除签名后继续。
 - [x] 审计 Ollama thinking/reasoning 的回放能力和 Rig 0.41 边界。

@@ -217,6 +217,9 @@ where
     }
 
     fn push_reasoning_delta(&mut self, id: Option<String>, reasoning: String) -> Result<(), ()> {
+        if reasoning.is_empty() {
+            return Ok(());
+        }
         if self
             .active_reasoning
             .as_ref()
@@ -260,6 +263,9 @@ where
     }
 
     fn complete_reasoning(&mut self, reasoning: Reasoning) -> Result<(), ()> {
+        if self.active_reasoning.is_none() && convert::reasoning_is_semantically_empty(&reasoning) {
+            return Ok(());
+        }
         let value = serde_json::to_value(reasoning).map_err(|_| ())?;
         let index = self.active_reasoning.take().map_or_else(
             || self.allocate_content(ContentKind::ProviderData),
@@ -797,6 +803,90 @@ mod tests {
                         && data.kind == "reasoning"
                         && data.value["content"][0]["content"]["text"] == "思考"
                         && data.value["content"][0]["content"]["signature"] == "signed"
+            ));
+        });
+    }
+
+    #[test]
+    fn semantically_empty_stream_reasoning_does_not_allocate_content() {
+        block_on(async {
+            let items = vec![
+                Ok(RawStreamingChoice::ReasoningDelta {
+                    id: None,
+                    reasoning: String::new(),
+                }),
+                Ok(RawStreamingChoice::Reasoning {
+                    id: None,
+                    content: ReasoningContent::Text {
+                        text: String::new(),
+                        signature: None,
+                    },
+                }),
+                Ok(RawStreamingChoice::FinalResponse(ProbeResponse {
+                    usage: Usage::default(),
+                })),
+            ];
+            let inner: StreamingResult<ProbeResponse> = Box::pin(stream::iter(items));
+            let mut stream = completion_stream(
+                StreamingCompletionResponse::stream(inner),
+                "openai-compatible",
+            );
+            let mut events = Vec::new();
+            while let Some(event) = stream.next().await {
+                events.push(event.expect("empty reasoning stream must remain valid"));
+            }
+            let response = validate_stream_events(&events)
+                .expect("empty reasoning stream must satisfy the shared contract");
+
+            assert!(response.content.is_empty());
+            assert!(!events.iter().any(|event| matches!(
+                event,
+                armillae_core::CompletionEvent::ContentStarted {
+                    kind: armillae_core::ContentKind::ProviderData,
+                    ..
+                }
+            )));
+            assert!(!events.iter().any(|event| matches!(
+                event,
+                armillae_core::CompletionEvent::ProviderEvent { data }
+                    if data.kind == "reasoning_delta" || data.kind == "reasoning"
+            )));
+        });
+    }
+
+    #[test]
+    fn empty_signed_stream_reasoning_is_preserved() {
+        block_on(async {
+            let items = vec![
+                Ok(RawStreamingChoice::Reasoning {
+                    id: None,
+                    content: ReasoningContent::Text {
+                        text: String::new(),
+                        signature: Some("signed-empty-thinking".to_owned()),
+                    },
+                }),
+                Ok(RawStreamingChoice::FinalResponse(ProbeResponse {
+                    usage: Usage::default(),
+                })),
+            ];
+            let inner: StreamingResult<ProbeResponse> = Box::pin(stream::iter(items));
+            let mut stream =
+                completion_stream(StreamingCompletionResponse::stream(inner), "anthropic");
+            let mut events = Vec::new();
+            while let Some(event) = stream.next().await {
+                events.push(event.expect("signed empty reasoning stream must remain valid"));
+            }
+            let response = validate_stream_events(&events)
+                .expect("signed empty reasoning stream must satisfy the shared contract");
+
+            assert!(matches!(
+                response.content.as_slice(),
+                [AssistantContent::ProviderData(data)]
+                    if data.provider == "anthropic"
+                        && data.kind == "reasoning"
+                        && data.value["content"][0]["content"]["text"] == ""
+                        && data.value["content"][0]["content"]["signature"]
+                            == "signed-empty-thinking"
             ));
         });
     }
