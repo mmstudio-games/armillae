@@ -50,6 +50,43 @@ impl Tool for LookupProjectFact {
     }
 }
 
+#[derive(Deserialize, JsonSchema)]
+struct LookupReleaseChannelArgs {
+    project: String,
+}
+
+#[derive(Serialize)]
+struct LookupReleaseChannelOutput {
+    channel: String,
+}
+
+struct LookupReleaseChannel;
+
+impl Tool for LookupReleaseChannel {
+    type Args = LookupReleaseChannelArgs;
+    type Output = LookupReleaseChannelOutput;
+    type Error = Infallible;
+
+    const NAME: &'static str = "lookup_release_channel";
+
+    fn description(&self) -> Cow<'static, str> {
+        Cow::Borrowed("Look up the current release channel for a project")
+    }
+
+    async fn call(
+        &self,
+        _context: ToolContext,
+        args: Self::Args,
+    ) -> Result<Self::Output, Self::Error> {
+        let channel = if args.project.eq_ignore_ascii_case("armillae") {
+            "alpha".to_owned()
+        } else {
+            "unknown".to_owned()
+        };
+        Ok(LookupReleaseChannelOutput { channel })
+    }
+}
+
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = BridgeConfig::builder("deepseek", "deepseek-v4-flash")
@@ -64,20 +101,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build()?;
     let resolved = config.resolve().await?;
     let bridge = RigBridgeFactory.create(resolved).await?;
-    let tools = ToolRegistry::builder().register(LookupProjectFact)?.build();
+    let tools = ToolRegistry::builder()
+        .register(LookupProjectFact)?
+        .register(LookupReleaseChannel)?
+        .build();
     let definitions = tools.definitions();
 
     let mut history = vec![Message::new(
         Role::System,
         vec![ContentPart::text(
             "You are a concise assistant. Answer in the same language as the user. Use the local \
-             lookup tool when the user asks for a project fact.",
+             lookup tools when the user asks for project facts or release channels. When the user \
+             asks you to use both tools, emit both ToolCalls in the same assistant response before \
+             answering.",
         )],
     )];
     let mut input = String::new();
 
-    println!("DeepSeek conversation with local Tool dispatch. Type /quit to exit.");
-    println!("Try: Use the local lookup tool to tell me about Armillae.");
+    println!("DeepSeek conversation with local multi-Tool dispatch. Type /quit to exit.");
+    println!(
+        "Try: Use both local tools in one turn to tell me what Armillae provides and its release \
+         channel."
+    );
     loop {
         print!("you> ");
         io::stdout().flush()?;
@@ -110,7 +155,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         } else {
             history.push(first.as_assistant_message());
             for call in calls {
-                println!("tool> executing {}", call.name);
+                println!(
+                    "tool> executing {} with arguments {}",
+                    call.name, call.arguments
+                );
                 let result = tools.execute(ToolContext::default(), call).await?;
                 history.push(Message::tool_result(result));
             }

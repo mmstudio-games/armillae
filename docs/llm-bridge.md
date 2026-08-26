@@ -348,9 +348,11 @@ typed Tool and registers it in `ToolRegistry` before running this flow.
 ### Multi-turn DeepSeek conversation with local Tool dispatch
 
 The DeepSeek example keeps System, User, Assistant, and ToolResult messages in application-owned
-history. Each line entered by the user first creates a request with a small local project-fact Tool
-and `ToolChoice::Auto`. If DeepSeek returns ToolCalls, the application executes them sequentially,
-appends their ToolResults, and explicitly makes one final request with `ToolChoice::None`:
+history. It registers two deterministic local Tools: one looks up a project fact and the other looks
+up its release channel. Each line entered by the user first creates a request with both Tools and
+`ToolChoice::Auto`. If DeepSeek returns one or more ToolCalls, the application prints each ToolCall's
+JSON arguments, executes the calls sequentially in response order, appends their ToolResults, and
+explicitly makes one final request with `ToolChoice::None`:
 
 ```rust
 let mut history = vec![Message::new(
@@ -373,6 +375,10 @@ let response = if calls.is_empty() {
 } else {
     history.push(first.as_assistant_message());
     for call in calls {
+        println!(
+            "tool> executing {} with arguments {}",
+            call.name, call.arguments
+        );
         let result = tools.execute(ToolContext::default(), call).await?;
         history.push(Message::tool_result(result));
     }
@@ -388,11 +394,17 @@ let response = if calls.is_empty() {
 history.push(response.as_assistant_message());
 ```
 
+To exercise multiple ToolCalls in one model response, enter:
+
+```text
+Use both local tools in one turn to tell me what Armillae provides and its release channel.
+```
+
 Export `DEEPSEEK_API_KEY`, then run
 [`deepseek_conversation.rs`](../crates/armillae-llm-rig/examples/deepseek_conversation.rs). Enter
-`/quit` to leave the conversation, or ask it to use the local lookup Tool for an Armillae fact. A
-normal text response remains a single model call; a ToolCall response adds exactly one explicit
-continuation call. The example uses Provider `deepseek` and the frozen baseline model
+`/quit` to leave the conversation, or use the prompt above to request both local Tools. A normal
+text response remains a single model call; a response containing one or more ToolCalls adds exactly
+one explicit continuation call. The example uses Provider `deepseek` and the frozen baseline model
 `deepseek-v4-flash`; no custom endpoint is required. The deprecated `deepseek-chat` and
 `deepseek-reasoner` aliases are intentionally not used.
 
