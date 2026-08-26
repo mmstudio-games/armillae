@@ -270,6 +270,33 @@ let final_response = bridge
 The full [`manual_tool_flow.rs`](../crates/armillae-llm-rig/examples/manual_tool_flow.rs) defines a
 typed Tool and registers it in `ToolRegistry` before running this flow.
 
+### Multi-turn DeepSeek conversation
+
+The DeepSeek example keeps System, User, and Assistant messages in application-owned history. Each
+line entered by the user creates exactly one `CompletionRequest`; the returned Assistant message is
+then appended for the next turn:
+
+```rust
+let mut history = vec![Message::new(
+    Role::System,
+    vec![ContentPart::text("Answer in the same language as the user.")],
+)];
+
+history.push(Message::user(prompt));
+let response = bridge
+    .complete(CompletionRequest {
+        messages: history.clone(),
+        ..CompletionRequest::default()
+    })
+    .await?;
+history.push(response.as_assistant_message());
+```
+
+Export `DEEPSEEK_API_KEY`, then run
+[`deepseek_conversation.rs`](../crates/armillae-llm-rig/examples/deepseek_conversation.rs). Enter
+`/quit` to leave the conversation. The example uses Provider `deepseek` and the frozen baseline
+model `deepseek-chat`; no custom endpoint is required.
+
 ### Local Ollama without a credential
 
 Ollama defaults to `http://localhost:11434`, so a local daemon only needs its Provider and model:
@@ -300,11 +327,13 @@ cargo run -p armillae-llm-rig --example simple_completion
 cargo run -p armillae-llm-rig --example streaming
 cargo run -p armillae-llm-rig --example structured_output
 cargo run -p armillae-llm-rig --example manual_tool_flow
+cargo run -p armillae-llm-rig --example deepseek_conversation
 cargo run -p armillae-llm-rig --example ollama_completion
 ```
 
-The OpenAI examples require `OPENAI_API_KEY`. The Ollama example requires a running daemon and the
-configured model, but no API key. These commands make real Provider calls and may incur cost; use
+The OpenAI examples require `OPENAI_API_KEY`, and the DeepSeek example requires
+`DEEPSEEK_API_KEY`. The Ollama example requires a running daemon and the configured model, but no
+API key. These commands make real Provider calls and may incur cost; use
 `cargo check -p armillae-llm-rig --examples` to compile them without sending requests.
 
 ## Observability and security
