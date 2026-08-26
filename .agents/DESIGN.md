@@ -21,6 +21,10 @@ Armillae 面向 Agentic 叙事、TRPG 运行时和大世界游戏引擎提供分
 继续拥有 canonical LLM 协议，由 Adapter 对目标 Provider 做双向投影，并由独立 LLM Router
 在显式策略下提供模型 fallback。所有已支持 Adapter 的直接 Bridge projection 已完成离线实现
 与 Mock HTTP 合约；Router 和授权 Live 场景矩阵仍待完成，因此仍不宣称“全量兼容所有模型”。
+真实 Provider 验证继续暴露此前离线门禁未覆盖的重大设计与链路问题，四个基础 crate 因此保持
+`alpha` 发布通道。进入 `beta` 的依据是 0.1 范围和公共协议基本冻结、重大链路缺陷清零并获得
+代表性 Live 与真实下游证据，而不是“离线实现完成”；稳定版必须经过至少一个 beta 稳定周期，
+不得从当前 alpha 直接晋级。
 
 ## 2. 分层与依赖方向
 
@@ -75,13 +79,16 @@ attempt，但不执行 Tool、不维护 Conversation Memory，也不改变 canon
    Router 只复用 Adapter projection，不成为单 Provider 正常工作的前置条件。
 3. 重新执行 DeepSeek 多轮与 Tool continuation Live 验证，再完成默认 ignored 的 OpenAI 协议
    Live 场景门禁。没有真实凭证时只交付可复现门禁，不伪造 Live 通过证据。
-4. 按已冻结的 Simulate 公共契约完成 Bevy P0 Spike，再实现共享后端合约测试；在 Spike 编译
+4. 四个基础 crate 保持 alpha；冻结 0.1 范围（包括 Router 是否纳入）、清零已知重大链路问题、
+   完成安全/发布审计、代表性 Live 和至少一个真实下游验证后，才单独决策是否进入 beta。
+   稳定版必须在 beta 中证明兼容性承诺可执行，不能仅凭离线测试或功能清单完成度晋级。
+5. 按已冻结的 Simulate 公共契约完成 Bevy P0 Spike，再实现共享后端合约测试；在 Spike 编译
    验证精确 Bevy 版本、Features 和错误边界前不创建产品 crate。
-5. 使用 Simulate 的已确认边界继续完成 Agentic 叙事运行时 RFC，不让运行时替用户决定 Agent、
+6. 使用 Simulate 的已确认边界继续完成 Agentic 叙事运行时 RFC，不让运行时替用户决定 Agent、
    Tool 或 Simulation Driver 的调度策略。
-6. 状态与持久化继续作为独立子系统保留，但在用户重新启动该方向前不创建 RFC、Spec、crate
+7. 状态与持久化继续作为独立子系统保留，但在用户重新启动该方向前不创建 RFC、Spec、crate
    或持久化 Schema。
-7. 冻结运行时与 LLM/Tool 等可选能力的依赖边界及端到端验收标准。
+8. 冻结运行时与 LLM/Tool 等可选能力的依赖边界及端到端验收标准。
 
 Anthropic 与 Ollama 继续使用精确锁定的 Rig 0.41.0 和既有 Bridge 合约，不为 Rig 已过滤的原始
 未知 SSE/NDJSON 数据引入自有传输层；Driver 未暴露的事实作为显式兼容限制记录。

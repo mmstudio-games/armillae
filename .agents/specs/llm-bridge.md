@@ -337,18 +337,29 @@ repository、homepage 和 readme 等非版本元数据继续从 workspace 继承
   不构成实际发布授权；
 - base branch 为 `main`，release branch 为独立的 `release`；两者不得相同，避免 Semifold 将
   版本提交直接强推到 base branch，或尝试创建源分支与目标分支相同的 release PR；
-- 四个 crate 在 workspace 初始化时以 `0.1.0-alpha.0` 建立集成基线；第一阶段离线实现完成后
-  统一恢复 Semifold 默认稳定通道，下一次版本计划直接移除 prerelease 后缀并进入 `0.1.0`，
-  不额外经过 beta 或 rc 通道；
+- 四个 crate 以 `0.1.0-alpha.0` 建立集成基线并继续使用 Semifold `alpha` 通道；离线实现完成、
+  TODO 勾选或单个 Live 用例通过均不构成晋级依据；
 - 使用 Semifold 默认 changelog 标签；
 - GitHub Actions 使用手工渲染自 Semifold 0.3.0 内置 Jinja 模板的
   `semifold-ci.yaml` 和 `semifold-status.yaml`，模板变量固定为 base branch `main`、Rust
   resolver；Semifold step ID、job output、权限和 registry token 契约保持与上游模板一致；
 - 配置发布通道不等于授权执行版本提升或向 registry 发布。
 
-crate 的稳定发布通道只表达 SemVer 发布策略，不改变 `armillae.llm/v1alpha1` 配置协议版本，
-也不把尚未执行的 Live Provider 矩阵视为已通过。首个 `0.1.0` 可以继续明确标注“Live 未验证”，
-但在真实矩阵留下脱敏证据前不得宣称全量支持冻结的 OpenAI 协议 Provider/模型组合。
+发布成熟度按以下门槛推进：
+
+- **Alpha**：公共 API、canonical 协议、Provider projection/fallback 语义和第一阶段范围仍可能
+  发生破坏性调整；所有当前版本与 changeset 计划必须保留 prerelease 后缀。
+- **Beta**：必须先冻结 0.1 范围，并明确 Router 是完成还是移出该范围；不存在已知会阻断普通
+  多轮、Tool continuation、Streaming、取消或既定 fallback 的重大缺陷；全部共享合约、Mock
+  HTTP、安全审计和四个 crate 的 publish dry-run 通过；代表性 Provider Live 矩阵留下脱敏证据，
+  且至少一个真实下游集成完成稳定性验证。满足门槛后仍需用户明确授权，使用 Semifold CLI 将
+  四个 crate 一致切换到 `beta`，不得手动改 manifest 版本。
+- **Stable**：至少经过一个 beta 稳定周期，已发布迁移说明和兼容性策略，且没有计划中的 0.1
+  公共协议破坏性变更；稳定发布继续需要单独授权。不得从当前 alpha 直接进入 stable。
+
+crate 发布通道只表达 SemVer 成熟度，不自动改变 `armillae.llm/v1alpha1` 配置协议版本；配置
+协议版本是否晋级必须由独立协议决策处理。任何发布阶段都不得在未完成真实矩阵证据时宣称
+“全量支持所有 OpenAI 协议 Provider/模型组合”。
 
 仓库同时提供一个可复用的 Rust CI workflow。Pull Request 直接调用该 workflow；`main` 的
 Semifold CD workflow 必须先复用并通过同一质量门禁，再运行 `semifold ci`，避免未验证提交进入

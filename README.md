@@ -8,8 +8,11 @@ type-safe Tool execution; its next design focus is the Agentic narrative runtime
 
 ## Status
 
-Armillae's four foundational crates target a stable release channel beginning with `0.1.0`. The
-implemented LLM foundation currently provides:
+Armillae is alpha software. Its four foundational crates remain on Semifold's `alpha` release
+channel while public protocol boundaries, Provider compatibility, and release evidence continue to
+stabilize. Beta requires a frozen 0.1 scope, no known chain-blocking defects, representative Live
+and downstream evidence, and explicit approval; stable will not be promoted directly from alpha.
+The implemented LLM foundation currently provides:
 
 - provider-independent message, completion, Tool, usage, and streaming protocols;
 - a runtime-independent `LlmBridge` for exactly one model call;

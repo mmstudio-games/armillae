@@ -59,9 +59,11 @@ shared Bridge and Streaming contracts.
 
 ## Releases
 
-Semifold manages changesets, versions, and stable release channels. Do not bump versions, publish to
-a registry, or create a release unless that action is explicitly authorized. A publish-readiness
-change should run `cargo publish --dry-run` separately for every affected crate.
+Semifold manages changesets, versions, and the current alpha release channels. Do not bump versions,
+change a release channel, publish to a registry, or create a release unless that action is explicitly
+authorized. Beta requires the repository's documented scope, compatibility, Live, downstream, and
+publish-readiness gates; stable is not promoted directly from alpha. A publish-readiness change
+should run `cargo publish --dry-run` separately for every affected crate.
 
 ## License
 

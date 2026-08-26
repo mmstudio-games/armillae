@@ -3,7 +3,7 @@
 > 状态：Active
 > 技术事实来源：[Armillae 设计索引](../DESIGN.md)与
 > [LLM Bridge 发布规范](../specs/llm-bridge.md#53-版本与发布)
-> 最后核对：2026-08-25
+> 最后核对：2026-08-27
 
 本清单记录跨子系统的文档、仓库治理、版本与发布差异，不承载子系统内部功能需求。
 
@@ -19,8 +19,11 @@
 
 - [x] 四个 crate 分别在自己的 manifest 中锁定 package version，不继承统一 workspace version。
 - [x] 为四个 crate 补齐一致且可继承的发布元数据，并确保打包后的 README 路径有效。
-- [x] 第一阶段离线实现完成后，将四个 crate 从 `alpha` 恢复为 Semifold 默认稳定通道；下一次
-      版本计划直接从 `0.1.0-alpha.0` 进入 `0.1.0`，不增加 beta 或 rc 阶段。
+- [x] 撤销未消费的 stable promotion changeset，并使用 Semifold CLI 将四个 crate 恢复为
+      `alpha` 通道；`semifold status` 不得再把下一版本计划为无 prerelease 后缀的稳定版。
+- [ ] 冻结 0.1 范围并明确 Router 是否纳入，清零重大链路缺陷，完成共享/Mock/安全门禁、
+      代表性 Live 矩阵、四 crate publish dry-run 和至少一个真实下游验证后，再决定是否进入
+      `beta`；stable 必须经过至少一个 beta 稳定周期并单独授权。
 - [ ] 分别通过四个 crate 的 `cargo publish --dry-run`，且不执行实际发布或版本提升。
       当前 `armillae-core` 已通过；其余 crate 已完成无元数据警告的打包阶段，完整验证等待
       `armillae-core 0.1.0` 按授权发布到 registry 后依赖拓扑重跑。
