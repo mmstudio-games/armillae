@@ -116,17 +116,196 @@ URL validation; applications accepting untrusted configuration should also suppl
 
 ## Examples
 
-The examples compile as `armillae-llm-rig` example targets:
+Every Bridge invocation below is exactly one model call. Only the manual Tool example performs a
+second call, and the application does so explicitly after executing the returned ToolCall. The full
+sources compile as `armillae-llm-rig` example targets.
+
+### One non-streaming completion
+
+Build and resolve a configuration, construct the Rig Driver, and submit a Provider-independent
+request:
+
+```rust
+use armillae_core::{CompletionRequest, Message};
+use armillae_llm::{BridgeConfig, BridgeFactory, CredentialRef};
+use armillae_llm_rig::RigBridgeFactory;
+
+# async fn example() -> Result<(), Box<dyn std::error::Error>> {
+let config = BridgeConfig::builder("rig", "openai", "gpt-4.1-mini")
+    .credential(CredentialRef::Environment {
+        name: "OPENAI_API_KEY".to_owned(),
+    })
+    .build()?;
+let bridge = RigBridgeFactory
+    .create(config.resolve(None, None).await?)
+    .await?;
+let response = bridge
+    .complete(CompletionRequest {
+        messages: vec![Message::user("Explain Armillae in one sentence.")],
+        ..CompletionRequest::default()
+    })
+    .await?;
+
+for content in response.content {
+    println!("{content:?}");
+}
+# Ok(())
+# }
+```
+
+The complete target is
+[`simple_completion.rs`](../crates/armillae-llm-rig/examples/simple_completion.rs).
+
+### Streaming text
+
+`stream` returns semantic Armillae events rather than raw Provider SSE or NDJSON chunks. Consume
+`TextDelta` for incremental output and use the unique `ResponseCompleted` event as the final
+normalized response:
+
+```rust
+use armillae_core::CompletionEvent;
+use futures::StreamExt;
+
+# async fn example(
+#     bridge: &dyn armillae_llm::LlmBridge,
+#     request: armillae_core::CompletionRequest,
+# ) -> Result<(), Box<dyn std::error::Error>> {
+let mut stream = bridge.stream(request).await?;
+while let Some(event) = stream.next().await {
+    match event? {
+        CompletionEvent::TextDelta { text, .. } => print!("{text}"),
+        CompletionEvent::ResponseCompleted { response } => {
+            println!("\nusage: {:?}", response.usage);
+        }
+        _ => {}
+    }
+}
+# Ok(())
+# }
+```
+
+The complete target, including stdout flushing, is
+[`streaming.rs`](../crates/armillae-llm-rig/examples/streaming.rs).
+
+### Strict structured output
+
+Use `OutputFormat::JsonSchema` when the selected Provider supports it. Generate the schema from the
+same Rust type used to deserialize the returned JSON; capability preflight rejects unsupported
+Provider/profile combinations before making a request:
+
+```rust
+use armillae_core::{CompletionRequest, Message, OutputFormat};
+use schemars::{JsonSchema, schema_for};
+use serde::Deserialize;
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct ReleaseSummary {
+    title: String,
+    highlights: Vec<String>,
+}
+
+# async fn example(
+#     bridge: &dyn armillae_llm::LlmBridge,
+# ) -> Result<(), Box<dyn std::error::Error>> {
+let response = bridge
+    .complete(CompletionRequest {
+        messages: vec![Message::user("Return a short release summary as JSON.")],
+        output_format: Some(OutputFormat::JsonSchema {
+            name: "release_summary".to_owned(),
+            schema: serde_json::to_value(schema_for!(ReleaseSummary))?,
+            strict: true,
+        }),
+        ..CompletionRequest::default()
+    })
+    .await?;
+# let _ = response;
+# Ok(())
+# }
+```
+
+[`structured_output.rs`](../crates/armillae-llm-rig/examples/structured_output.rs) also extracts the
+text content and deserializes it back into `ReleaseSummary`.
+
+### Manual ToolCall continuation
+
+A Bridge returns ToolCalls but never executes them. The application owns execution, history, and
+the decision to call the model again:
+
+```rust
+# async fn example(
+#     bridge: &dyn armillae_llm::LlmBridge,
+#     tools: &dyn armillae_tools::ToolExecutor,
+#     first_request: armillae_core::CompletionRequest,
+# ) -> Result<(), Box<dyn std::error::Error>> {
+use armillae_core::{CompletionRequest, Message, ToolChoice};
+use armillae_tools::ToolContext;
+
+let definitions = tools.definitions();
+let mut first_request = first_request;
+first_request.tools = definitions.clone();
+let mut history = first_request.messages.clone();
+let first = bridge.complete(first_request).await?;
+let calls = first.tool_calls().cloned().collect::<Vec<_>>();
+history.push(first.as_assistant_message());
+
+for call in calls {
+    let result = tools.execute(ToolContext::default(), call).await?;
+    history.push(Message::tool_result(result));
+}
+
+let final_response = bridge
+    .complete(CompletionRequest {
+        messages: history,
+        tools: definitions,
+        tool_choice: Some(ToolChoice::None),
+        ..CompletionRequest::default()
+    })
+    .await?;
+# let _ = final_response;
+# Ok(())
+# }
+```
+
+The full [`manual_tool_flow.rs`](../crates/armillae-llm-rig/examples/manual_tool_flow.rs) defines a
+typed Tool and registers it in `ToolRegistry` before running this flow.
+
+### Local Ollama without a credential
+
+Ollama defaults to `http://localhost:11434`, so a local daemon only needs its Provider and model:
+
+```rust
+use armillae_llm::{BridgeConfig, BridgeFactory};
+use armillae_llm_rig::RigBridgeFactory;
+
+# async fn example() -> Result<(), Box<dyn std::error::Error>> {
+let config = BridgeConfig::builder("rig", "ollama", "qwen3:8b").build()?;
+let bridge = RigBridgeFactory
+    .create(config.resolve(None, None).await?)
+    .await?;
+# let _ = bridge;
+# Ok(())
+# }
+```
+
+Change `qwen3:8b` to a model installed by `ollama pull`. Add a credential only when the Ollama
+endpoint is protected by a proxy. See
+[`ollama_completion.rs`](../crates/armillae-llm-rig/examples/ollama_completion.rs) for the complete
+request.
+
+Run the examples from the workspace root:
 
 ```sh
 cargo run -p armillae-llm-rig --example simple_completion
 cargo run -p armillae-llm-rig --example streaming
+cargo run -p armillae-llm-rig --example structured_output
 cargo run -p armillae-llm-rig --example manual_tool_flow
+cargo run -p armillae-llm-rig --example ollama_completion
 ```
 
-`manual_tool_flow` shows the ownership boundary directly: the first model call returns ToolCalls,
-the application executes each one through `ToolRegistry`, appends ToolResults to history, and makes
-the second model call itself.
+The OpenAI examples require `OPENAI_API_KEY`. The Ollama example requires a running daemon and the
+configured model, but no API key. These commands make real Provider calls and may incur cost; use
+`cargo check -p armillae-llm-rig --examples` to compile them without sending requests.
 
 ## Observability and security
 
