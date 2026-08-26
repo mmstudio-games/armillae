@@ -1,13 +1,13 @@
 # Armillae LLM Bridge 与 Tool Executor 规范
 
-> 状态：Active Spec；OpenAI 协议基线维护中；全量支持声明等待端到端场景验证
+> 状态：Active Spec；OpenAI 协议基线维护中；Anthropic P6 已实现
 > 规范基线：2026-08-13
 > 适用范围：`armillae-core`、`armillae-llm`、`armillae-tools`、`armillae-llm-rig`
 > 设计入口：[Armillae 设计索引](../DESIGN.md)
 > 后续方向：[RFC 0001：Agentic 叙事运行时](../rfcs/0001-agentic-runtime.md)
 
-本文保留第一阶段设计基线、协议决策和验收证据。当前只补充 OpenAI 协议端到端场景验证；
-Anthropic、Ollama、可观测性及其它 Provider 扩展暂停，不再与 Agentic 运行时设计混写。
+本文保留第一阶段设计基线、协议决策和验收证据。主仓优先推进 Simulate，Anthropic P6 已在
+隔离分支实现；Ollama、可观测性及其它 Provider 扩展继续暂停，不再与 Agentic 运行时设计混写。
 
 ## 1. 背景
 
@@ -1248,6 +1248,41 @@ response ID/model、finish reason、system fingerprint、缓存 token usage 和 
 reasoning 继续按公共转换规则进入 `ProviderData { provider = "deepseek" }`，不得静默丢弃。
 三个 Provider 的 OpenAI-compatible ToolResult 都沿用本节记录的 `is_error` 省略策略。
 
+Anthropic 使用 rig 原生 Messages Client，默认 endpoint 为 `https://api.anthropic.com`，请求
+路径为 `/v1/messages`，credential 通过 `x-api-key` 发送，并由 rig 添加固定
+`anthropic-version` header。显式 endpoint 继续经过通用 URL 与宿主 EndpointPolicy 校验。
+本阶段不开放 Anthropic `provider_options` 或请求扩展；任何非空配置或扩展都必须在发送前
+拒绝，避免把 prompt caching、beta header、thinking 或其它高级能力隐式带入公共契约。
+
+Anthropic 使用固定且保守的能力预设：支持 Streaming、Tool Calling、并行 ToolCall、全部既有
+ToolChoice、JSON Schema 和 System role；不支持 Developer role 与 JSON Object。System 只允许
+出现在消息历史开头，避免 rig 将中途 System 静默重排到顶层。Anthropic 请求必须由构造期默认值
+或单次请求显式提供 `max_output_tokens`；`stop` 映射为 `stop_sequences`，`seed` 因 Provider
+不支持而本地拒绝。JSON Schema 必须使用 `strict = true`；Anthropic wire 只接收 schema，不接收
+公共协议中的描述性 name，因此 Adapter 校验 name 非空后不下发该字段。rig 0.41 会为 Anthropic
+自动补齐 required/additionalProperties、移除数字约束并将 oneOf 改为 anyOf；Adapter 必须先
+验证 schema 已属于不会发生语义改写的严格子集：所有 object 属性均 required、
+`additionalProperties = false`、无数字约束且无 oneOf。不符合时本地拒绝，不能交给 rig 静默
+放宽。ToolResult 的 JSON content 由 rig 按 Anthropic wire 能力序列化为紧凑 JSON 文本。
+
+Anthropic wire 原生支持 `ToolResult.is_error`，但 rig 0.41 的通用 `ToolResult` 不承载该字段，
+并固定转换为 `is_error: None`。为避免静默丢失错误事实，Rig Anthropic Adapter 允许
+`is_error = false`（wire 缺失等价于 false），对 `is_error = true` 返回 `InvalidRequest`；本阶段
+不为这一字段复制 Anthropic 请求类型或建立自有 HTTP 传输层。需要原生错误标记的调用方应选择
+能够保留该事实的其它 Driver，而不是依赖 Rig Adapter 改写 ToolResult content。
+
+Anthropic 非流式响应要求非空 ID 和 model；`end_turn`/`stop_sequence` 映射为 Stop，
+`max_tokens` 映射为 Length，`tool_use` 映射为 ToolCall，未知 stop reason 进入
+`FinishReason::Unknown`。`stop_sequence` 与 cache-creation token usage 只进入受控 metadata。
+流式路径复用统一状态机；Anthropic 在 reasoning delta 后给出的完整带签名 Reasoning 必须完成并
+替换同一 content index，不能生成重复 ProviderData block。
+
+rig 0.41 会在 Anthropic Provider parser 内过滤 `StreamingEvent::Unknown` 和未知 delta，且其
+公开 terminal stream item 不携带 response ID、model 或 finish reason。Adapter 对已经暴露的
+rig Unknown item 继续生成 `ProviderEvent`，但不复制传输层来捕获 rig 未暴露的原始 SSE；相应
+终端事实保持 `None`，不得推断。需要原始未知 Anthropic SSE 的使用场景应选择保留该能力的其它
+Driver。这是 Rig Provider 边界的显式能力限制，不作为升级 Rig 或引入原生 Adapter 的理由。
+
 P5 Streaming 复用相同的 Request Mapper、能力预检和 rig `CompletionModel::stream` 传输边界，
 由 Provider 无关的私有流式状态机将 rig item 转换为 Armillae 事件。五个当前 Provider 使用同一
 Streaming 合约，不为具名 Provider 复制或分叉公共语义。MiniMax 和 Moonshot 仍不接入
@@ -1291,16 +1326,18 @@ Rig Error                  → Armillae BridgeError
 - Provider 原始响应只进入受控 metadata，不把 Secret 写入日志。
 - 不依赖 Rig Agent 的 Tool 注册或执行路径。
 
-`ToolResult.is_error` 是 Armillae 公共协议的一部分，但 Provider 线协议未必有对应字段。Adapter
-必须为每个 Provider 显式定义该字段的兼容策略：Provider 原生支持错误标记时进行语义映射；
-Provider 不支持时，不得因此拒绝 ToolResult，也不得擅自改写或包装调用方提供的内容。
+`ToolResult.is_error` 是 Armillae 公共协议的一部分，但 Provider 线协议或所选 Driver 的通用
+类型未必有对应字段。Adapter 必须为每个 Provider 显式定义该字段的兼容策略：能够承载原生错误
+标记时进行语义映射；Provider 不支持时不得因此拒绝 ToolResult，也不得擅自改写或包装调用方
+提供的内容；Provider 原生支持但 Driver 无法承载时，必须在转换前显式拒绝 `is_error = true`，
+不得静默省略。
 
 第一阶段 OpenAI/OpenAI-compatible 的 tool message 不承载独立的 `is_error` 字段，因此转换时
 保留 `call_id`、content 及其顺序，但不把 `is_error` 下发到 Provider。原始 Armillae 请求和
 调用方维护的消息历史仍保留该字段；调用方在 `is_error = true` 时必须通过 ToolResult content
 向模型表达失败事实。Adapter 不自动添加错误前缀或结构，以免改变调用方定义的模型可见内容。
-此行为必须由转换测试覆盖，不能作为未记录的字段丢弃。后续 Anthropic 等 Provider 若有原生
-错误标记，应映射该标记，而不是沿用 OpenAI 的省略策略。
+此行为必须由转换测试覆盖，不能作为未记录的字段丢弃。Anthropic 原生错误标记受 rig 0.41
+通用类型限制，采用上一节记录的显式拒绝策略，而不是沿用 OpenAI 的省略策略。
 
 ### 9.4 首批 Provider
 
@@ -1310,7 +1347,7 @@ Provider 不支持时，不得因此拒绝 ToolResult，也不得擅自改写或
 2. MiniMax、Moonshot 和 DeepSeek 的 OpenAI-compatible 路径：先验证具名 Provider 路由、
    保守能力预检和 Provider-specific raw response 归一化，再与 OpenAI/OpenAI-compatible
    一同通过 P5 Streaming 合约。
-3. Anthropic：未来验证原生 Tool 协议和消息差异。
+3. Anthropic：在隔离分支验证原生 Tool 协议、消息差异和统一 Streaming 合约。
 4. Ollama：未来验证本地 Provider 和 NDJSON 流式路径。
 
 Provider 支持必须通过同一套 Bridge 合约测试，而不是分别定义不同的外部行为。
@@ -1525,7 +1562,8 @@ Bridge 一次只执行一个 Model Call 的边界。完整测试证据和限制�
 
 ### P6：更多 Provider
 
-- Anthropic。
+- Anthropic：使用 rig 原生 Messages Client，完成非流式、流式、Tool Calling、保守能力预检和
+  响应归一化；接受 rig 对原始未知 Anthropic SSE 的过滤边界，不引入自有传输层。
 - Ollama。
 - 完成统一合约测试和能力矩阵。
 

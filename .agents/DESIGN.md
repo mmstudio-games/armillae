@@ -14,12 +14,12 @@ Armillae 面向 Agentic 叙事、TRPG 运行时和大世界游戏引擎提供分
 调用、Tool 执行、Agent 调度、叙事状态和世界状态压入同一个运行时；各层拥有独立协议、错误
 语义和演进节奏，通过明确的单向依赖组合。
 
-当前开发重心从继续扩展 LLM Provider 转向 Agentic 叙事基础设施。模拟推进、Clock、可替换
+当前主仓开发重心从继续扩展 LLM Provider 转向 Agentic 叙事基础设施。模拟推进、Clock、可替换
 ECS 后端和 Module 边界已经由 RFC 0002 收敛，并转入 `armillae-simulate` Active Spec；具体
 持久化模型及其 RFC 暂缓，不属于 `armillae-simulate` 的实现责任。LLM Bridge 已完成 OpenAI
 协议主流 Provider 的公共协议、非流式、流式和 Tool Calling 基线，但在完成端到端场景矩阵前，
-不宣称“全量支持所有 OpenAI 协议主流模型”。Anthropic、Ollama 及其它 Bridge 完善项进入暂停
-队列，不阻塞运行时设计。
+不宣称“全量支持所有 OpenAI 协议主流模型”。Anthropic P6 已在隔离分支完成，不改变主仓优先
+推进 Simulate 的顺序，也不阻塞运行时设计；Ollama 及其它 Bridge 完善项继续暂停。
 
 ## 2. 分层与依赖方向
 
@@ -34,7 +34,7 @@ Agentic 叙事运行时                 Discovery
   │     ├── armillae-simulate       后端中立的执行、Clock 与 Module 契约
   │     └── armillae-simulate-bevy  首个 ECS 后端适配
   ├── 组合：状态与持久化            RFC 暂缓；独立于 simulate
-  ├── 可选：LlmBridge              OpenAI 协议基线维护中
+  ├── 可选：LlmBridge              OpenAI 协议基线维护中；Anthropic P6 已完成
   ├── 可选：ToolExecutor           单次执行边界已实现
   └── 副作用治理
 ```
@@ -59,15 +59,18 @@ Agentic 叙事运行时                 Discovery
 
 ## 4. 当前工作顺序
 
-1. 为 OpenAI 协议支持定义并执行端到端场景矩阵，形成可审计的支持声明；该工作只验证既有
-   Bridge，不继续扩大 Provider 范围。
-2. 按已冻结的 Simulate 公共契约完成 Bevy P0 Spike，再实现共享后端合约测试；在 Spike 编译
+1. 按已冻结的 Simulate 公共契约完成 Bevy P0 Spike，再实现共享后端合约测试；在 Spike 编译
    验证精确 Bevy 版本、Features 和错误边界前不创建产品 crate。
+2. 为 OpenAI 协议支持定义并执行端到端场景矩阵，形成可审计的支持声明；该工作只验证既有
+   Bridge，不继续扩大 OpenAI-compatible Provider 范围。
 3. 使用 Simulate 的已确认边界继续完成 Agentic 叙事运行时 RFC，不让运行时替用户决定 Agent、
    Tool 或 Simulation Driver 的调度策略。
 4. 状态与持久化继续作为独立子系统保留，但在用户重新启动该方向前不创建 RFC、Spec、crate
    或持久化 Schema。
 5. 冻结运行时与 LLM/Tool 等可选能力的依赖边界及端到端验收标准。
+
+Anthropic P6 继续使用精确锁定的 Rig 0.41.0 和既有 Bridge 合约，不为 Rig 已过滤的原始未知
+Anthropic SSE 事件引入自有传输层；该已完成增量不占用上述主仓工作顺序。
 
 ## 5. 变更规则
 
