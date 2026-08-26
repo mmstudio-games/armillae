@@ -104,7 +104,8 @@
 - 使用 `.changes/config.toml` 中的 Semifold 配置管理 changeset、版本和发布通道。
 - 当前配置要求 Semifold 0.3.0 或与其配置格式兼容的后续版本；执行前必须确认没有因 PATH
   优先级误用不支持 Cargo workspace 继承字段的 0.2.5。
-- 第一阶段四个 crate 均处于 `alpha` 发布通道。
+- 第一阶段四个 crate 均使用 Semifold 默认稳定发布通道；workspace 初始化产生的
+  `0.1.0-alpha.0` 基线由下一次版本计划直接收敛为 `0.1.0`。
 - 未经用户明确授权，不得执行实际版本提升、registry publish、GitHub Release 或发布 CI。
 
 ## 7. 安全、Secret 与日志

@@ -8,7 +8,8 @@ type-safe Tool execution; its next design focus is the Agentic narrative runtime
 
 ## Status
 
-Armillae is alpha software. The implemented LLM foundation currently provides:
+Armillae's four foundational crates target a stable release channel beginning with `0.1.0`. The
+implemented LLM foundation currently provides:
 
 - provider-independent message, completion, Tool, usage, and streaming protocols;
 - a runtime-independent `LlmBridge` for exactly one model call;

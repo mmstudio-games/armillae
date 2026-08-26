@@ -302,13 +302,18 @@ repository、homepage 和 readme 等非版本元数据继续从 workspace 继承
   不构成实际发布授权；
 - base branch 为 `main`，release branch 为独立的 `release`；两者不得相同，避免 Semifold 将
   版本提交直接强推到 base branch，或尝试创建源分支与目标分支相同的 release PR；
-- 四个 crate 均使用 `alpha` 发布通道，首次进入通道时保留当前稳定版本基准，不额外执行
-  patch、minor 或 major 提升；
+- 四个 crate 在 workspace 初始化时以 `0.1.0-alpha.0` 建立集成基线；第一阶段离线实现完成后
+  统一恢复 Semifold 默认稳定通道，下一次版本计划直接移除 prerelease 后缀并进入 `0.1.0`，
+  不额外经过 beta 或 rc 通道；
 - 使用 Semifold 默认 changelog 标签；
 - GitHub Actions 使用手工渲染自 Semifold 0.3.0 内置 Jinja 模板的
   `semifold-ci.yaml` 和 `semifold-status.yaml`，模板变量固定为 base branch `main`、Rust
   resolver；Semifold step ID、job output、权限和 registry token 契约保持与上游模板一致；
 - 配置发布通道不等于授权执行版本提升或向 registry 发布。
+
+crate 的稳定发布通道只表达 SemVer 发布策略，不改变 `armillae.llm/v1alpha1` 配置协议版本，
+也不把尚未执行的 Live Provider 矩阵视为已通过。首个 `0.1.0` 可以继续明确标注“Live 未验证”，
+但在真实矩阵留下脱敏证据前不得宣称全量支持冻结的 OpenAI 协议 Provider/模型组合。
 
 仓库同时提供一个可复用的 Rust CI workflow。Pull Request 直接调用该 workflow；`main` 的
 Semifold CD workflow 必须先复用并通过同一质量门禁，再运行 `semifold ci`，避免未验证提交进入

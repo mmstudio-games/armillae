@@ -52,8 +52,8 @@
 - [x] 落实 crate 依赖方向，禁止 `armillae-llm` 与 `armillae-tools` 互相依赖。
 - [x] 保证 `armillae-core` 不依赖异步运行时、HTTP Client 或 LLM SDK。
 - [x] 建立统一的格式检查、Clippy、单元测试和文档构建基线。
-- [x] 使用 Semifold 0.3.0 初始化 Rust workspace 版本管理，并将四个 crate 配置为 `alpha`
-      发布通道。
+- [x] 使用 Semifold 0.3.0 初始化 Rust workspace 版本管理，并以 `alpha` 发布通道建立四个 crate
+      的首个集成基线；后续稳定通道迁移由项目发布清单统一记录。
 - [x] 添加可由 Pull Request 和 Semifold CD 复用的 Rust CI，覆盖格式、check、全部离线测试、
       严格 Clippy 和文档构建。
 - [x] 修正 Semifold release-PR 拓扑：以 `main` 为 base branch、独立的 `release` 为 release

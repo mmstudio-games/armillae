@@ -31,22 +31,18 @@ changeset-template = """
 [packages.armillae-core]
 path = "crates/armillae-core"
 resolver = "rust"
-channel = "alpha"
 
 [packages.armillae-llm]
 path = "crates/armillae-llm"
 resolver = "rust"
-channel = "alpha"
 
 [packages.armillae-llm-rig]
 path = "crates/armillae-llm-rig"
 resolver = "rust"
-channel = "alpha"
 
 [packages.armillae-tools]
 path = "crates/armillae-tools"
 resolver = "rust"
-channel = "alpha"
 
 [resolver.rust.pre-check]
 type = "http"

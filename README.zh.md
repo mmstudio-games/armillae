@@ -8,7 +8,7 @@ Armillae 是一个面向 Agentic 叙事系统、TRPG 运行时和大世界模拟
 
 ## 当前状态
 
-Armillae 目前处于 alpha 阶段。已经实现的 LLM 基础设施提供：
+Armillae 的四个基础 crate 将从 `0.1.0` 开始使用稳定发布通道。已经实现的 LLM 基础设施提供：
 
 - Provider 无关的消息、Completion、Tool、Usage 与 Streaming 协议；
 - 一次只执行一个 Model Call、且不依赖具体异步运行时的 `LlmBridge`；
