@@ -6,6 +6,7 @@ use secrecy::SecretString;
 
 use crate::request::OpenAiRequestMapper;
 
+pub(crate) mod anthropic;
 pub(crate) mod deepseek;
 pub(crate) mod minimax;
 pub(crate) mod moonshot;

@@ -7,9 +7,9 @@
 
 本清单只记录 LLM Bridge 与 Tool Executor 设计和当前实现之间的差异。
 
-当前 Workspace 与 P0 至 P5 已完成。项目重心已转向 Agentic 叙事运行时设计；本清单中
-Anthropic、Ollama、可观测性和其它 Bridge 完善项进入暂停队列。当前只继续定义和执行 OpenAI
-协议端到端场景矩阵，用于形成可审计的支持声明，不继续扩大 Provider 范围。
+当前 Workspace 与 P0 至 P5 已完成。主仓优先推进 Simulate，Anthropic P6 已在隔离分支实现；
+Ollama、可观测性和其它 Bridge 完善项继续暂停。OpenAI 协议端到端场景矩阵仍用于形成可审计
+的支持声明，不继续扩大 OpenAI-compatible Provider 范围。
 
 ## 总体边界
 
@@ -271,16 +271,17 @@ Anthropic、Ollama、可观测性和其它 Bridge 完善项进入暂停队列。
 - [ ] 覆盖 Usage、finish reason、请求 ID、Provider 错误与能力预检。
 - [ ] 汇总脱敏测试证据并据此确定对外支持声明；完成前不宣称全量支持。
 
-## P6：更多 Provider（暂停）
+## P6：更多 Provider（Anthropic 已完成；其余暂停）
 
 ### Anthropic
 
-- [ ] 实现 Anthropic Provider factory、配置和能力矩阵。
-- [ ] 明确处理 System/Developer role、ToolChoice 和 Tool Result 的 Provider 差异。
-- [ ] 完成非流式文本、单/多 ToolCall 和后续 ToolResult 请求。
-- [ ] 完成流式文本与 ToolCall 参数重组。
-- [ ] 完成 Usage、finish reason、错误和未知事件映射。
-- [ ] 通过共享 Bridge 与 Streaming 合约测试。
+- [x] 实现 Anthropic Provider factory、配置和能力矩阵。
+- [x] 明确处理 leading System/Developer role、ToolChoice、max tokens、stop/seed、结构化输出和
+      Tool Result 的 Provider/rig 差异。
+- [x] 完成非流式文本、单/多 ToolCall 和后续 ToolResult 请求。
+- [x] 完成流式文本、Reasoning 和 ToolCall 参数重组，避免完整 Reasoning 与 delta 重复。
+- [x] 完成 Usage、finish reason 和错误映射；记录 rig 过滤原始未知 Anthropic SSE 的显式限制。
+- [x] 通过共享 Bridge 与 Streaming 合约测试。
 
 ### Ollama
 

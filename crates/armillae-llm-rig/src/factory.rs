@@ -31,6 +31,7 @@ fn create_bridge(config: ResolvedBridgeConfig) -> Result<Arc<dyn LlmBridge>, Bri
     }
 
     match config.provider.as_str() {
+        "anthropic" => providers::anthropic::create(config, credential),
         "deepseek" => providers::deepseek::create(config, credential),
         "minimax" => providers::minimax::create(config, credential),
         "moonshot" => providers::moonshot::create(config, credential),
@@ -92,7 +93,7 @@ mod tests {
         let wrong_driver =
             futures::executor::block_on(factory.create(resolved_config("other", "openai")));
         let unsupported_provider =
-            futures::executor::block_on(factory.create(resolved_config("rig", "anthropic")));
+            futures::executor::block_on(factory.create(resolved_config("rig", "ollama")));
 
         assert!(matches!(
             wrong_driver,
@@ -112,5 +113,13 @@ mod tests {
             futures::executor::block_on(factory.create(resolved_config("rig", provider)))
                 .unwrap_or_else(|error| panic!("factory must route {provider}: {error}"));
         }
+    }
+
+    #[test]
+    fn factory_routes_anthropic_provider() {
+        let factory = RigBridgeFactory;
+
+        futures::executor::block_on(factory.create(resolved_config("rig", "anthropic")))
+            .expect("factory must route Anthropic");
     }
 }

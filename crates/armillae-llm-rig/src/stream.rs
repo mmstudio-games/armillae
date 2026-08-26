@@ -131,8 +131,7 @@ where
             }
             StreamedAssistantContent::Reasoning(reasoning) => {
                 self.close_text();
-                self.close_reasoning()?;
-                self.push_complete_reasoning(reasoning)?;
+                self.complete_reasoning(reasoning)?;
             }
             StreamedAssistantContent::ReasoningDelta { id, reasoning } => {
                 self.close_text();
@@ -229,9 +228,12 @@ where
         Ok(())
     }
 
-    fn push_complete_reasoning(&mut self, reasoning: Reasoning) -> Result<(), ()> {
+    fn complete_reasoning(&mut self, reasoning: Reasoning) -> Result<(), ()> {
         let value = serde_json::to_value(reasoning).map_err(|_| ())?;
-        let index = self.allocate_content(ContentKind::ProviderData);
+        let index = self.active_reasoning.take().map_or_else(
+            || self.allocate_content(ContentKind::ProviderData),
+            |active| active.index,
+        );
         let data = self.provider_data("reasoning", value);
         self.pending
             .push_back(CompletionEvent::ProviderEvent { data: data.clone() });
@@ -554,6 +556,7 @@ mod tests {
     use futures::{Stream, StreamExt, executor::block_on, stream};
     use rig_core::{
         completion::{CompletionError, GetTokenUsage, Usage},
+        message::ReasoningContent,
         streaming::{
             RawStreamingChoice, RawStreamingToolCall, StreamingCompletionResponse, StreamingResult,
             ToolCallDeltaContent,
@@ -719,6 +722,51 @@ mod tests {
                 armillae_core::CompletionEvent::ProviderEvent { data }
                     if data.kind == "unknown_stream_item"
             )));
+        });
+    }
+
+    #[test]
+    fn complete_reasoning_finalizes_the_active_delta_block_without_duplication() {
+        block_on(async {
+            let items = vec![
+                Ok(RawStreamingChoice::ReasoningDelta {
+                    id: None,
+                    reasoning: "思".to_owned(),
+                }),
+                Ok(RawStreamingChoice::ReasoningDelta {
+                    id: None,
+                    reasoning: "考".to_owned(),
+                }),
+                Ok(RawStreamingChoice::Reasoning {
+                    id: None,
+                    content: ReasoningContent::Text {
+                        text: "思考".to_owned(),
+                        signature: Some("signed".to_owned()),
+                    },
+                }),
+                Ok(RawStreamingChoice::FinalResponse(ProbeResponse {
+                    usage: Usage::default(),
+                })),
+            ];
+            let inner: StreamingResult<ProbeResponse> = Box::pin(stream::iter(items));
+            let mut stream =
+                completion_stream(StreamingCompletionResponse::stream(inner), "anthropic");
+            let mut events = Vec::new();
+            while let Some(event) = stream.next().await {
+                events.push(event.expect("Anthropic reasoning stream must remain valid"));
+            }
+            let response = validate_stream_events(&events)
+                .expect("reasoning events must satisfy the shared streaming contract");
+
+            assert_eq!(response.content.len(), 1);
+            assert!(matches!(
+                &response.content[0],
+                AssistantContent::ProviderData(data)
+                    if data.provider == "anthropic"
+                        && data.kind == "reasoning"
+                        && data.value["content"][0]["content"]["text"] == "思考"
+                        && data.value["content"][0]["content"]["signature"] == "signed"
+            ));
         });
     }
 

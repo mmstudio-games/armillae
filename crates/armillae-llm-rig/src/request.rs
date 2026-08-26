@@ -1,5 +1,6 @@
 use armillae_core::{
-    CompletionRequest as ArmillaeCompletionRequest, GenerationOptions, OutputFormat,
+    CompletionRequest as ArmillaeCompletionRequest, ContentPart, GenerationOptions, OutputFormat,
+    Role,
 };
 use armillae_llm::BridgeError;
 use rig_core::completion::CompletionRequest as RigCompletionRequest;
@@ -13,6 +14,204 @@ pub(crate) trait RigRequestMapper: Send + Sync {
         request: ArmillaeCompletionRequest,
         defaults: &GenerationOptions,
     ) -> Result<RigCompletionRequest, BridgeError>;
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct AnthropicRequestMapper;
+
+impl AnthropicRequestMapper {
+    pub(crate) fn new(provider_options: Value) -> Result<Self, BridgeError> {
+        let Value::Object(options) = provider_options else {
+            return invalid_configuration("Anthropic provider_options must be a JSON object");
+        };
+        if !options.is_empty() {
+            return invalid_configuration("Anthropic provider_options are not supported");
+        }
+        Ok(Self)
+    }
+}
+
+impl RigRequestMapper for AnthropicRequestMapper {
+    fn map_request(
+        &self,
+        request: ArmillaeCompletionRequest,
+        defaults: &GenerationOptions,
+    ) -> Result<RigCompletionRequest, BridgeError> {
+        validate_anthropic_messages(&request)?;
+        let parts = convert::request_parts(request, defaults)?;
+        if !parts.extensions.values.is_empty() {
+            return invalid_request("Anthropic request extensions are not supported");
+        }
+        if parts.generation.seed.is_some() {
+            return Err(BridgeError::UnsupportedCapability {
+                capability: "generation.seed".to_owned(),
+            });
+        }
+        let Some(max_tokens) = parts.generation.max_output_tokens else {
+            return invalid_request("Anthropic requires max_output_tokens");
+        };
+
+        let mut additional_params = Map::new();
+        if !parts.generation.stop.is_empty() {
+            additional_params.insert("stop_sequences".to_owned(), json!(parts.generation.stop));
+        }
+        let mut mapped = RigCompletionRequest {
+            model: None,
+            preamble: None,
+            chat_history: parts.chat_history,
+            documents: Vec::new(),
+            tools: parts.tools,
+            temperature: parts.generation.temperature,
+            max_tokens: Some(max_tokens),
+            tool_choice: parts.tool_choice,
+            additional_params: (!additional_params.is_empty())
+                .then_some(Value::Object(additional_params)),
+            output_schema: None,
+            record_telemetry_content: false,
+        };
+        apply_anthropic_output_format(&mut mapped, parts.output_format)?;
+        Ok(mapped)
+    }
+}
+
+fn validate_anthropic_messages(request: &ArmillaeCompletionRequest) -> Result<(), BridgeError> {
+    let mut saw_non_system = false;
+
+    for message in &request.messages {
+        if message.role == Role::System {
+            if saw_non_system {
+                return invalid_request(
+                    "Anthropic system messages must precede all conversation messages",
+                );
+            }
+        } else {
+            saw_non_system = true;
+        }
+
+        for content in &message.content {
+            if matches!(content, ContentPart::ToolResult(result) if result.is_error) {
+                return invalid_request(
+                    "Rig 0.41 cannot preserve Anthropic ToolResult.is_error = true",
+                );
+            }
+        }
+    }
+
+    if !saw_non_system {
+        return invalid_request("Anthropic requires at least one non-system message");
+    }
+    Ok(())
+}
+
+fn apply_anthropic_output_format(
+    request: &mut RigCompletionRequest,
+    output_format: Option<OutputFormat>,
+) -> Result<(), BridgeError> {
+    match output_format {
+        None | Some(OutputFormat::Text) => Ok(()),
+        Some(OutputFormat::JsonSchema {
+            name,
+            schema,
+            strict,
+        }) => {
+            if name.trim().is_empty() {
+                return invalid_request("JSON Schema output name must not be empty");
+            }
+            if !strict {
+                return Err(BridgeError::UnsupportedCapability {
+                    capability: "output_format.json_schema.non_strict".to_owned(),
+                });
+            }
+            validate_anthropic_schema(&schema)?;
+            request.output_schema =
+                Some(
+                    serde_json::from_value(schema).map_err(|_| BridgeError::InvalidRequest {
+                        message: "Anthropic output schema is not a valid JSON Schema".to_owned(),
+                    })?,
+                );
+            Ok(())
+        }
+        Some(OutputFormat::JsonObject) => Err(BridgeError::UnsupportedCapability {
+            capability: "output_format.json_object".to_owned(),
+        }),
+        Some(_) => Err(BridgeError::UnsupportedCapability {
+            capability: "output_format.unknown".to_owned(),
+        }),
+    }
+}
+
+fn validate_anthropic_schema(schema: &Value) -> Result<(), BridgeError> {
+    let Value::Object(object) = schema else {
+        return invalid_request("Anthropic output schema must be a JSON object");
+    };
+
+    let is_object = object.get("type") == Some(&Value::String("object".to_owned()))
+        || object.contains_key("properties");
+    if is_object {
+        if object.get("additionalProperties") != Some(&Value::Bool(false)) {
+            return invalid_request(
+                "Anthropic object schemas require additionalProperties = false",
+            );
+        }
+        if let Some(Value::Object(properties)) = object.get("properties") {
+            let Some(Value::Array(required)) = object.get("required") else {
+                return invalid_request("Anthropic object schemas require every property");
+            };
+            let required = required
+                .iter()
+                .map(Value::as_str)
+                .collect::<Option<std::collections::BTreeSet<_>>>()
+                .ok_or_else(|| BridgeError::InvalidRequest {
+                    message: "Anthropic schema required entries must be strings".to_owned(),
+                })?;
+            if required.len() != properties.len()
+                || properties
+                    .keys()
+                    .any(|name| !required.contains(name.as_str()))
+            {
+                return invalid_request("Anthropic object schemas require every property");
+            }
+        }
+    }
+
+    if matches!(
+        object.get("type").and_then(Value::as_str),
+        Some("integer" | "number")
+    ) && [
+        "minimum",
+        "maximum",
+        "exclusiveMinimum",
+        "exclusiveMaximum",
+        "multipleOf",
+    ]
+    .iter()
+    .any(|name| object.contains_key(*name))
+    {
+        return invalid_request("Anthropic numeric schemas do not support numeric constraints");
+    }
+    if object.contains_key("oneOf") {
+        return invalid_request("Anthropic output schemas do not support oneOf");
+    }
+
+    for name in ["$defs", "properties"] {
+        if let Some(Value::Object(children)) = object.get(name) {
+            for child in children.values() {
+                validate_anthropic_schema(child)?;
+            }
+        }
+    }
+    if let Some(items) = object.get("items") {
+        validate_anthropic_schema(items)?;
+    }
+    for name in ["anyOf", "allOf"] {
+        if let Some(Value::Array(children)) = object.get(name) {
+            for child in children {
+                validate_anthropic_schema(child)?;
+            }
+        }
+    }
+
+    Ok(())
 }
 
 #[derive(Clone, Debug)]
