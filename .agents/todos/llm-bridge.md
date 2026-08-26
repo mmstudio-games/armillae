@@ -164,6 +164,8 @@
 - [x] 实现 object-safe `BridgeFactory`。
 - [x] 在 `armillae-llm-rig` 中直接提供第一阶段的 `RigBridgeFactory`。
 - [x] 不提前实现动态 Adapter 插件 Registry。
+- [x] 从 `BridgeConfig` 删除重复的 Driver 选择，由宿主外层运行时配置选择 Factory，并保留
+      `BridgeFactory::driver()` 作为 Factory 标识。
 
 ### MockBridge 与共享合约
 

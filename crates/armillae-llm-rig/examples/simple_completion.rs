@@ -4,7 +4,7 @@ use armillae_llm_rig::RigBridgeFactory;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let config = BridgeConfig::builder("rig", "openai", "gpt-4.1-mini")
+    let config = BridgeConfig::builder("openai", "gpt-4.1-mini")
         .credential(CredentialRef::Environment {
             name: "OPENAI_API_KEY".to_owned(),
         })

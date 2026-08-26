@@ -24,7 +24,7 @@ pub(super) fn resolved_config(
     provider_options: Value,
 ) -> (BridgeConfig, Option<SecretString>) {
     let mut builder =
-        BridgeConfig::builder("rig", provider, "test-model").provider_options(provider_options);
+        BridgeConfig::builder(provider, "test-model").provider_options(provider_options);
     if let Some(endpoint) = endpoint {
         builder = builder.endpoint(
             endpoint

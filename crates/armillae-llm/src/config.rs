@@ -15,7 +15,6 @@ pub const BRIDGE_CONFIG_API_VERSION: &str = "armillae.llm/v1alpha1";
 #[serde(deny_unknown_fields)]
 pub struct BridgeConfig {
     pub api_version: String,
-    pub driver: String,
     pub provider: String,
     pub model: String,
     pub endpoint: Option<Url>,
@@ -29,12 +28,8 @@ pub struct BridgeConfig {
 }
 
 impl BridgeConfig {
-    pub fn builder(
-        driver: impl Into<String>,
-        provider: impl Into<String>,
-        model: impl Into<String>,
-    ) -> BridgeConfigBuilder {
-        BridgeConfigBuilder::new(driver, provider, model)
+    pub fn builder(provider: impl Into<String>, model: impl Into<String>) -> BridgeConfigBuilder {
+        BridgeConfigBuilder::new(provider, model)
     }
 
     pub fn from_toml(input: &str) -> Result<Self, BridgeError> {
@@ -63,7 +58,6 @@ impl BridgeConfig {
         if self.api_version != BRIDGE_CONFIG_API_VERSION {
             return invalid_configuration(format!("unsupported api_version: {}", self.api_version));
         }
-        validate_non_empty("driver", &self.driver)?;
         validate_non_empty("provider", &self.provider)?;
         validate_non_empty("model", &self.model)?;
         self.transport.validate()?;
@@ -146,7 +140,6 @@ impl fmt::Debug for BridgeConfig {
         formatter
             .debug_struct("BridgeConfig")
             .field("api_version", &self.api_version)
-            .field("driver", &self.driver)
             .field("provider", &self.provider)
             .field("model", &self.model)
             .field("endpoint", &self.endpoint.as_ref().map(|_| "[configured]"))
@@ -293,15 +286,10 @@ pub struct BridgeConfigBuilder {
 }
 
 impl BridgeConfigBuilder {
-    pub fn new(
-        driver: impl Into<String>,
-        provider: impl Into<String>,
-        model: impl Into<String>,
-    ) -> Self {
+    pub fn new(provider: impl Into<String>, model: impl Into<String>) -> Self {
         Self {
             config: BridgeConfig {
                 api_version: BRIDGE_CONFIG_API_VERSION.to_owned(),
-                driver: driver.into(),
                 provider: provider.into(),
                 model: model.into(),
                 endpoint: None,

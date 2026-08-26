@@ -23,13 +23,6 @@ impl BridgeFactory for RigBridgeFactory {
 
 fn create_bridge(config: ResolvedBridgeConfig) -> Result<Arc<dyn LlmBridge>, BridgeError> {
     let (config, credential) = config.into_parts();
-    if config.driver != "rig" {
-        return invalid_configuration(format!(
-            "RigBridgeFactory cannot construct driver: {}",
-            config.driver
-        ));
-    }
-
     match config.provider.as_str() {
         "anthropic" => providers::anthropic::create(config, credential),
         "deepseek" => providers::deepseek::create(config, credential),
@@ -69,8 +62,8 @@ mod tests {
         }
     }
 
-    fn resolved_config(driver: &str, provider: &str) -> armillae_llm::ResolvedBridgeConfig {
-        let config = BridgeConfig::builder(driver, provider, "test-model")
+    fn resolved_config(provider: &str) -> armillae_llm::ResolvedBridgeConfig {
+        let config = BridgeConfig::builder(provider, "test-model")
             .credential(CredentialRef::Resolver {
                 key: "factory-test".to_owned(),
             })
@@ -89,17 +82,11 @@ mod tests {
     }
 
     #[test]
-    fn factory_rejects_wrong_driver_and_unknown_provider() {
+    fn factory_rejects_unknown_provider() {
         let factory = RigBridgeFactory;
-        let wrong_driver =
-            futures::executor::block_on(factory.create(resolved_config("other", "openai")));
         let unsupported_provider =
-            futures::executor::block_on(factory.create(resolved_config("rig", "unknown")));
+            futures::executor::block_on(factory.create(resolved_config("unknown")));
 
-        assert!(matches!(
-            wrong_driver,
-            Err(BridgeError::InvalidConfiguration { .. })
-        ));
         assert!(matches!(
             unsupported_provider,
             Err(BridgeError::InvalidConfiguration { .. })
@@ -111,7 +98,7 @@ mod tests {
         let factory = RigBridgeFactory;
 
         for provider in ["deepseek", "minimax", "moonshot"] {
-            futures::executor::block_on(factory.create(resolved_config("rig", provider)))
+            futures::executor::block_on(factory.create(resolved_config(provider)))
                 .unwrap_or_else(|error| panic!("factory must route {provider}: {error}"));
         }
     }
@@ -120,13 +107,13 @@ mod tests {
     fn factory_routes_anthropic_provider() {
         let factory = RigBridgeFactory;
 
-        futures::executor::block_on(factory.create(resolved_config("rig", "anthropic")))
+        futures::executor::block_on(factory.create(resolved_config("anthropic")))
             .expect("factory must route Anthropic");
     }
 
     #[test]
     fn factory_routes_ollama_without_requiring_a_credential() {
-        let config = BridgeConfig::builder("rig", "ollama", "test-model")
+        let config = BridgeConfig::builder("ollama", "test-model")
             .build()
             .expect("Ollama factory test config must validate");
         let resolved = futures::executor::block_on(config.resolve())

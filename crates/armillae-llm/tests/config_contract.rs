@@ -15,7 +15,6 @@ use url::Url;
 fn toml_json_and_builder_produce_the_same_config_model() {
     let toml = r#"
 api_version = "armillae.llm/v1alpha1"
-driver = "rig"
 provider = "openai"
 model = "example-model"
 endpoint = "https://api.example.com/v1"
@@ -37,7 +36,7 @@ reasoning_effort = "medium"
 "#;
     let endpoint = Url::parse("https://api.example.com/v1")
         .expect("the test endpoint is a valid absolute URL");
-    let builder_config = BridgeConfig::builder("rig", "openai", "example-model")
+    let builder_config = BridgeConfig::builder("openai", "example-model")
         .endpoint(endpoint)
         .credential(CredentialRef::Environment {
             name: "EXAMPLE_API_KEY".to_owned(),
@@ -72,7 +71,6 @@ fn config_defaults_are_stable() {
     let config = BridgeConfig::from_toml(
         r#"
 api_version = "armillae.llm/v1alpha1"
-driver = "rig"
 provider = "openai"
 model = "example-model"
 "#,
@@ -85,58 +83,82 @@ model = "example-model"
 }
 
 #[test]
+fn legacy_driver_field_is_rejected() {
+    let toml = r#"
+api_version = "armillae.llm/v1alpha1"
+driver = "rig"
+provider = "openai"
+model = "example-model"
+"#;
+    let json = r#"{
+        "api_version": "armillae.llm/v1alpha1",
+        "driver": "rig",
+        "provider": "openai",
+        "model": "example-model"
+    }"#;
+
+    assert!(matches!(
+        BridgeConfig::from_toml(toml),
+        Err(BridgeError::InvalidConfiguration { .. })
+    ));
+    assert!(matches!(
+        BridgeConfig::from_json(json),
+        Err(BridgeError::InvalidConfiguration { .. })
+    ));
+}
+
+#[test]
 fn common_validation_rejects_invalid_config_without_provider_guessing() {
     let invalid_configs = [
-        BridgeConfig::builder("rig", "openai", "model")
+        BridgeConfig::builder("openai", "model")
             .api_version("armillae.llm/v2")
             .build(),
-        BridgeConfig::builder(" ", "openai", "model").build(),
-        BridgeConfig::builder("rig", " ", "model").build(),
-        BridgeConfig::builder("rig", "openai", " ").build(),
-        BridgeConfig::builder("rig", "openai", "model")
+        BridgeConfig::builder(" ", "model").build(),
+        BridgeConfig::builder("openai", " ").build(),
+        BridgeConfig::builder("openai", "model")
             .transport(TransportConfig {
                 connect_timeout_ms: 0,
                 request_timeout_ms: 60_000,
             })
             .build(),
-        BridgeConfig::builder("rig", "openai", "model")
+        BridgeConfig::builder("openai", "model")
             .transport(TransportConfig {
                 connect_timeout_ms: 5_000,
                 request_timeout_ms: 0,
             })
             .build(),
-        BridgeConfig::builder("rig", "openai", "model")
+        BridgeConfig::builder("openai", "model")
             .provider_options(Value::Null)
             .build(),
-        BridgeConfig::builder("rig", "openai", "model")
+        BridgeConfig::builder("openai", "model")
             .defaults(GenerationOptions {
                 temperature: Some(-0.1),
                 ..GenerationOptions::default()
             })
             .build(),
-        BridgeConfig::builder("rig", "openai", "model")
+        BridgeConfig::builder("openai", "model")
             .defaults(GenerationOptions {
                 max_output_tokens: Some(0),
                 ..GenerationOptions::default()
             })
             .build(),
-        BridgeConfig::builder("rig", "openai", "model")
+        BridgeConfig::builder("openai", "model")
             .defaults(GenerationOptions {
                 stop: vec![String::new()],
                 ..GenerationOptions::default()
             })
             .build(),
-        BridgeConfig::builder("rig", "openai", "model")
+        BridgeConfig::builder("openai", "model")
             .credential(CredentialRef::Environment {
                 name: String::new(),
             })
             .build(),
-        BridgeConfig::builder("rig", "openai", "model")
+        BridgeConfig::builder("openai", "model")
             .credential(CredentialRef::File {
                 path: PathBuf::new(),
             })
             .build(),
-        BridgeConfig::builder("rig", "openai", "model")
+        BridgeConfig::builder("openai", "model")
             .credential(CredentialRef::Resolver { key: String::new() })
             .build(),
     ];
@@ -157,13 +179,13 @@ fn custom_endpoints_are_allowed_by_default_after_structural_validation() {
         Url::parse("http://127.0.0.1:11434/v1").expect("the local test endpoint is valid");
 
     assert!(
-        BridgeConfig::builder("rig", "openai", "model")
+        BridgeConfig::builder("openai", "model")
             .endpoint(https_endpoint)
             .build()
             .is_ok()
     );
     assert!(
-        BridgeConfig::builder("rig", "openai", "model")
+        BridgeConfig::builder("openai", "model")
             .endpoint(local_endpoint)
             .build()
             .is_ok()
@@ -176,7 +198,7 @@ fn custom_endpoints_are_allowed_by_default_after_structural_validation() {
     for endpoint in invalid_endpoints {
         let endpoint = Url::parse(endpoint).expect("the URL is syntactically valid for the test");
         assert!(matches!(
-            BridgeConfig::builder("rig", "openai", "model")
+            BridgeConfig::builder("openai", "model")
                 .endpoint(endpoint)
                 .build(),
             Err(BridgeError::InvalidConfiguration { .. })
@@ -200,7 +222,7 @@ fn endpoint_policy_can_optionally_tighten_the_default() {
         }
     }
 
-    let allowed = BridgeConfig::builder("rig", "openai", "model")
+    let allowed = BridgeConfig::builder("openai", "model")
         .endpoint(
             Url::parse("https://gateway.example.com/v1")
                 .expect("the allowed endpoint is a valid URL"),
@@ -208,7 +230,7 @@ fn endpoint_policy_can_optionally_tighten_the_default() {
         .build_with_endpoint_policy(&ExampleOnly);
     assert!(allowed.is_ok());
 
-    let rejected = BridgeConfig::builder("rig", "openai", "model")
+    let rejected = BridgeConfig::builder("openai", "model")
         .endpoint(
             Url::parse("https://other.example/v1").expect("the rejected endpoint is a valid URL"),
         )
@@ -219,7 +241,7 @@ fn endpoint_policy_can_optionally_tighten_the_default() {
             if message == "endpoint host is not allowed"
     ));
 
-    let allowed_config = BridgeConfig::builder("rig", "openai", "model")
+    let allowed_config = BridgeConfig::builder("openai", "model")
         .endpoint(
             Url::parse("https://gateway.example.com/v1")
                 .expect("the allowed endpoint is a valid URL"),
@@ -229,7 +251,7 @@ fn endpoint_policy_can_optionally_tighten_the_default() {
     let context = BridgeResolveContext::new().endpoint_policy(&ExampleOnly);
     assert!(block_on(allowed_config.resolve_with(context)).is_ok());
 
-    let rejected_config = BridgeConfig::builder("rig", "openai", "model")
+    let rejected_config = BridgeConfig::builder("openai", "model")
         .endpoint(
             Url::parse("https://other.example/v1").expect("the rejected endpoint is a valid URL"),
         )
@@ -262,7 +284,7 @@ fn resolver_credentials_use_an_object_safe_async_contract() {
     }
 
     let resolver: Arc<dyn SecretResolver> = Arc::new(StaticResolver);
-    let config = BridgeConfig::builder("rig", "openai", "model")
+    let config = BridgeConfig::builder("openai", "model")
         .credential(CredentialRef::Resolver {
             key: "primary".to_owned(),
         })
@@ -299,7 +321,7 @@ fn empty_resolved_credentials_are_rejected() {
         }
     }
 
-    let resolver_config = BridgeConfig::builder("rig", "openai", "model")
+    let resolver_config = BridgeConfig::builder("openai", "model")
         .credential(CredentialRef::Resolver {
             key: "empty".to_owned(),
         })
@@ -315,7 +337,7 @@ fn empty_resolved_credentials_are_rejected() {
 
     let path = unique_secret_path();
     std::fs::write(&path, "\r\n").expect("the test can create an empty Secret file");
-    let file_config = BridgeConfig::builder("rig", "openai", "model")
+    let file_config = BridgeConfig::builder("openai", "model")
         .credential(CredentialRef::File { path: path.clone() })
         .build()
         .expect("the File credential reference itself is valid");
@@ -331,7 +353,7 @@ fn file_credentials_remove_exactly_one_line_ending() {
     let path = unique_secret_path();
     std::fs::write(&path, "  file-secret  \r\n")
         .expect("the test can create its temporary Secret file");
-    let config = BridgeConfig::builder("rig", "openai", "model")
+    let config = BridgeConfig::builder("openai", "model")
         .credential(CredentialRef::File { path: path.clone() })
         .build()
         .expect("the File credential reference is valid");
@@ -362,7 +384,7 @@ fn file_credentials_remove_exactly_one_line_ending() {
 
 #[test]
 fn environment_credentials_are_resolved_during_construction() {
-    let config = BridgeConfig::builder("rig", "openai", "model")
+    let config = BridgeConfig::builder("openai", "model")
         .credential(CredentialRef::Environment {
             name: "PATH".to_owned(),
         })
@@ -393,7 +415,7 @@ fn config_and_resolved_debug_output_omit_sensitive_values() {
         }
     }
 
-    let config = BridgeConfig::builder("rig", "openai", "model")
+    let config = BridgeConfig::builder("openai", "model")
         .endpoint(
             Url::parse("https://gateway.example/v1?token=endpoint-secret-marker")
                 .expect("the test endpoint is valid"),
@@ -473,7 +495,7 @@ fn bridge_factory_is_object_safe() {
     }
 
     let factory: Arc<dyn BridgeFactory> = Arc::new(ContractFactory);
-    let config = BridgeConfig::builder("contract", "mock", "model")
+    let config = BridgeConfig::builder("mock", "model")
         .build()
         .expect("the factory test configuration is valid");
     let resolved =

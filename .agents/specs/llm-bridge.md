@@ -772,7 +772,6 @@ Bridge 只提供 `retryable`、`retry_after` 等事实，不决定是否重新�
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BridgeConfig {
     pub api_version: String,
-    pub driver: String,
     pub provider: String,
     pub model: String,
     pub endpoint: Option<Url>,
@@ -801,8 +800,8 @@ pub enum CredentialRef {
 5 秒、请求超时为 60 秒，两者必须大于零；不设置跨 Provider 的任意最大值。自动重试不属于
 Transport，仍由下游根据 `BridgeError` 中的事实决定。
 
-`BridgeConfig` 的 `api_version` 必须等于 `armillae.llm/v1alpha1`，`driver`、`provider` 和
-`model` 必须非空，`provider_options` 必须是 JSON Object。通用层只验证跨 Provider 的结构；
+`BridgeConfig` 的 `api_version` 必须等于 `armillae.llm/v1alpha1`，`provider` 和 `model` 必须
+非空，`provider_options` 必须是 JSON Object。通用层只验证跨 Provider 的结构；
 具体字段、类型和未知字段由 Adapter Factory 在构造阶段严格验证。生成默认值在通用层拒绝
 非有限或负数 temperature、零 `max_output_tokens` 和空 stop string；Provider 特有的范围继续
 由 Adapter 验证。
@@ -818,7 +817,6 @@ Bridge 执行单次请求时，将构造期 `defaults` 与 `CompletionRequest.ge
 
 ```toml
 api_version = "armillae.llm/v1alpha1"
-driver = "rig"
 provider = "openai"
 model = "example-model"
 endpoint = "https://api.openai.com/v1"
@@ -839,7 +837,10 @@ max_output_tokens = 2048
 reasoning_effort = "medium"
 ```
 
-文件解析和运行时 Builder 最终生成同一个 `BridgeConfig`。配置生命周期为：
+文件解析和运行时 Builder 最终生成同一个 `BridgeConfig`。`BridgeConfig` 只描述一次 Bridge
+构造所需的 Provider、模型、凭证、传输与扩展配置，不包含 Adapter Driver 选择。宿主可以在
+自己的外层配置中保留 `driver` 或其他路由字段，并在运行时据此选择 `RigBridgeFactory` 或未来
+的其他 Factory；Armillae 不约束宿主外层配置的格式。配置生命周期为：
 
 ```text
 TOML / JSON / Rust Builder
@@ -849,7 +850,7 @@ TOML / JSON / Rust Builder
            │ 默认解析或 BridgeResolveContext
            ▼
   ResolvedBridgeConfig
-           │ 校验 + Adapter Factory
+           │ 宿主在运行时选择的 Adapter Factory
            ▼
    Arc<dyn LlmBridge>
 ```
@@ -923,7 +924,10 @@ pub trait BridgeFactory: Send + Sync {
 }
 ```
 
-第一阶段可以直接实例化 `RigBridgeFactory`。如果后续需要插件式 Adapter，再增加按 `driver` 注册的 Factory Registry；本阶段不提前实现动态插件加载。
+`BridgeFactory::driver()` 是 Factory 自身的稳定标识，供宿主发现、组织或选择 Factory；它不
+属于 `BridgeConfig`，也不要求宿主在编译时固定 Factory。第一阶段由宿主在读取自己的运行时
+配置后直接选择并实例化 `RigBridgeFactory`。Armillae 第一阶段不提供 Factory Registry、配置
+Loader 或动态插件加载；后续若出现多个 Adapter 实现与共享注册机制的真实需求，再单独设计。
 
 ### 7.7 Mock Bridge
 

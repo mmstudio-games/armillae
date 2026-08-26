@@ -37,7 +37,6 @@ stored in the serializable configuration.
 
 ```toml
 api_version = "armillae.llm/v1alpha1"
-driver = "rig"
 provider = "openai"
 model = "gpt-4.1-mini"
 
@@ -58,7 +57,6 @@ stop = []
 ```json
 {
   "api_version": "armillae.llm/v1alpha1",
-  "driver": "rig",
   "provider": "openai",
   "model": "gpt-4.1-mini",
   "endpoint": null,
@@ -78,7 +76,7 @@ stop = []
 use armillae_core::GenerationOptions;
 use armillae_llm::{BridgeConfig, CredentialRef, TransportConfig};
 
-let config = BridgeConfig::builder("rig", "openai", "gpt-4.1-mini")
+let config = BridgeConfig::builder("openai", "gpt-4.1-mini")
     .credential(CredentialRef::Environment {
         name: "OPENAI_API_KEY".to_owned(),
     })
@@ -94,6 +92,11 @@ let config = BridgeConfig::builder("rig", "openai", "gpt-4.1-mini")
     .build()?;
 # Ok::<(), armillae_llm::BridgeError>(())
 ```
+
+`BridgeConfig` intentionally does not select an Adapter Driver. Applications may keep a `driver`
+field in their own outer configuration and use it at runtime to choose `RigBridgeFactory` or a
+future Factory. Armillae only receives the Provider configuration after that host-owned routing
+decision, so it does not prescribe a configuration loader or require a compile-time Factory choice.
 
 Resolve the credential, then construct the Driver:
 
@@ -158,7 +161,7 @@ use armillae_llm::{BridgeConfig, BridgeFactory, CredentialRef};
 use armillae_llm_rig::RigBridgeFactory;
 
 # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-let config = BridgeConfig::builder("rig", "openai", "gpt-4.1-mini")
+let config = BridgeConfig::builder("openai", "gpt-4.1-mini")
     .credential(CredentialRef::Environment {
         name: "OPENAI_API_KEY".to_owned(),
     })
@@ -334,7 +337,7 @@ use armillae_llm::{BridgeConfig, BridgeFactory};
 use armillae_llm_rig::RigBridgeFactory;
 
 # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-let config = BridgeConfig::builder("rig", "ollama", "qwen3:8b").build()?;
+let config = BridgeConfig::builder("ollama", "qwen3:8b").build()?;
 let bridge = RigBridgeFactory
     .create(config.resolve().await?)
     .await?;

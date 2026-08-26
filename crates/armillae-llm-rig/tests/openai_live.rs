@@ -52,7 +52,7 @@ impl LiveTarget {
     }
 
     fn config(&self) -> Result<BridgeConfig, Box<dyn Error>> {
-        let mut builder = BridgeConfig::builder("rig", &self.provider, &self.model).credential(
+        let mut builder = BridgeConfig::builder(&self.provider, &self.model).credential(
             CredentialRef::Environment {
                 name: self.credential_env.clone(),
             },
@@ -290,15 +290,12 @@ async fn live_local_preflight_and_remote_rejection_are_classified() -> Result<()
         .expect_err("Developer role must fail locally for the frozen Provider matrix");
     assert!(matches!(local, BridgeError::UnsupportedCapability { .. }));
 
-    let invalid_config = BridgeConfig::builder(
-        "rig",
-        &target.provider,
-        "armillae-intentionally-invalid-model",
-    )
-    .credential(CredentialRef::Environment {
-        name: target.credential_env,
-    })
-    .build()?;
+    let invalid_config =
+        BridgeConfig::builder(&target.provider, "armillae-intentionally-invalid-model")
+            .credential(CredentialRef::Environment {
+                name: target.credential_env,
+            })
+            .build()?;
     let invalid_bridge = RigBridgeFactory
         .create(invalid_config.resolve().await?)
         .await?;
