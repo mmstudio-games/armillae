@@ -300,11 +300,12 @@ let final_response = bridge
 The full [`manual_tool_flow.rs`](../crates/armillae-llm-rig/examples/manual_tool_flow.rs) defines a
 typed Tool and registers it in `ToolRegistry` before running this flow.
 
-### Multi-turn DeepSeek conversation
+### Multi-turn DeepSeek conversation with local Tool dispatch
 
-The DeepSeek example keeps System, User, and Assistant messages in application-owned history. Each
-line entered by the user creates exactly one `CompletionRequest`; the returned Assistant message is
-then appended for the next turn:
+The DeepSeek example keeps System, User, Assistant, and ToolResult messages in application-owned
+history. Each line entered by the user first creates a request with a small local project-fact Tool
+and `ToolChoice::Auto`. If DeepSeek returns ToolCalls, the application executes them sequentially,
+appends their ToolResults, and explicitly makes one final request with `ToolChoice::None`:
 
 ```rust
 let mut history = vec![Message::new(
@@ -313,19 +314,41 @@ let mut history = vec![Message::new(
 )];
 
 history.push(Message::user(prompt));
-let response = bridge
+let first = bridge
     .complete(CompletionRequest {
         messages: history.clone(),
+        tools: definitions.clone(),
+        tool_choice: Some(ToolChoice::Auto),
         ..CompletionRequest::default()
     })
     .await?;
+let calls = first.tool_calls().cloned().collect::<Vec<_>>();
+let response = if calls.is_empty() {
+    first
+} else {
+    history.push(first.as_assistant_message());
+    for call in calls {
+        let result = tools.execute(ToolContext::default(), call).await?;
+        history.push(Message::tool_result(result));
+    }
+    bridge
+        .complete(CompletionRequest {
+            messages: history.clone(),
+            tools: definitions.clone(),
+            tool_choice: Some(ToolChoice::None),
+            ..CompletionRequest::default()
+        })
+        .await?
+};
 history.push(response.as_assistant_message());
 ```
 
 Export `DEEPSEEK_API_KEY`, then run
 [`deepseek_conversation.rs`](../crates/armillae-llm-rig/examples/deepseek_conversation.rs). Enter
-`/quit` to leave the conversation. The example uses Provider `deepseek` and the frozen baseline
-model `deepseek-v4-flash`; no custom endpoint is required. The deprecated `deepseek-chat` and
+`/quit` to leave the conversation, or ask it to use the local lookup Tool for an Armillae fact. A
+normal text response remains a single model call; a ToolCall response adds exactly one explicit
+continuation call. The example uses Provider `deepseek` and the frozen baseline model
+`deepseek-v4-flash`; no custom endpoint is required. The deprecated `deepseek-chat` and
 `deepseek-reasoner` aliases are intentionally not used.
 
 ### Local Ollama without a credential
