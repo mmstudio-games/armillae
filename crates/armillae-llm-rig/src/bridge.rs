@@ -5,8 +5,12 @@ use armillae_llm::{BoxFuture, BridgeCapabilities, BridgeError, CompletionStream,
 use rig_core::completion::CompletionModel;
 
 use crate::{
+    observability::{self, InvocationObservation},
     request::RigRequestMapper,
-    response::{self, RigResponseNormalizer},
+    response::{
+        self, NoopStreamingResponseNormalizer, RigResponseNormalizer,
+        RigStreamingResponseNormalizer,
+    },
     stream,
 };
 
@@ -15,10 +19,12 @@ where
     M: CompletionModel,
 {
     model: M,
+    model_name: String,
     capabilities: BridgeCapabilities,
     defaults: GenerationOptions,
     request_mapper: Arc<dyn RigRequestMapper>,
     normalizer: Arc<dyn RigResponseNormalizer<M::Response>>,
+    streaming_normalizer: Arc<dyn RigStreamingResponseNormalizer<M::StreamingResponse>>,
 }
 
 impl<M> RigBridge<M>
@@ -27,18 +33,41 @@ where
 {
     pub(crate) fn new(
         model: M,
+        model_name: impl Into<String>,
         capabilities: BridgeCapabilities,
         defaults: GenerationOptions,
         request_mapper: Arc<dyn RigRequestMapper>,
         normalizer: Arc<dyn RigResponseNormalizer<M::Response>>,
     ) -> Result<Self, BridgeError> {
-        capabilities.validate()?;
-        Ok(Self {
+        Self::new_with_streaming_normalizer(
             model,
+            model_name,
             capabilities,
             defaults,
             request_mapper,
             normalizer,
+            Arc::new(NoopStreamingResponseNormalizer),
+        )
+    }
+
+    pub(crate) fn new_with_streaming_normalizer(
+        model: M,
+        model_name: impl Into<String>,
+        capabilities: BridgeCapabilities,
+        defaults: GenerationOptions,
+        request_mapper: Arc<dyn RigRequestMapper>,
+        normalizer: Arc<dyn RigResponseNormalizer<M::Response>>,
+        streaming_normalizer: Arc<dyn RigStreamingResponseNormalizer<M::StreamingResponse>>,
+    ) -> Result<Self, BridgeError> {
+        capabilities.validate()?;
+        Ok(Self {
+            model,
+            model_name: model_name.into(),
+            capabilities,
+            defaults,
+            request_mapper,
+            normalizer,
+            streaming_normalizer,
         })
     }
 }
@@ -58,14 +87,25 @@ where
         request: CompletionRequest,
     ) -> BoxFuture<'a, Result<CompletionResponse, BridgeError>> {
         Box::pin(async move {
-            self.capabilities.validate_request(&request)?;
-            let request = self.request_mapper.map_request(request, &self.defaults)?;
-            let response = self
-                .model
-                .completion(request)
-                .await
-                .map_err(|error| self.normalizer.normalize_error(error))?;
-            response::response_from_rig(response, self.normalizer.as_ref())
+            let mut observation = InvocationObservation::new(
+                self.normalizer.provider(),
+                &self.model_name,
+                false,
+                request.tools.len(),
+            );
+            let result = async {
+                self.capabilities.validate_request(&request)?;
+                let request = self.request_mapper.map_request(request, &self.defaults)?;
+                let response = self
+                    .model
+                    .completion(request)
+                    .await
+                    .map_err(|error| self.normalizer.normalize_error(error))?;
+                response::response_from_rig(response, self.normalizer.as_ref())
+            }
+            .await;
+            observation.finish_completion(&result);
+            result
         })
     }
 
@@ -74,17 +114,34 @@ where
         request: CompletionRequest,
     ) -> BoxFuture<'a, Result<CompletionStream, BridgeError>> {
         Box::pin(async move {
-            self.capabilities.validate_streaming_request(&request)?;
-            let request = self.request_mapper.map_request(request, &self.defaults)?;
-            let response = self
-                .model
-                .stream(request)
-                .await
-                .map_err(|error| self.normalizer.normalize_error(error))?;
-            Ok(stream::completion_stream(
-                response,
+            let mut observation = InvocationObservation::new(
                 self.normalizer.provider(),
-            ))
+                &self.model_name,
+                true,
+                request.tools.len(),
+            );
+            let result = async {
+                self.capabilities.validate_streaming_request(&request)?;
+                let request = self.request_mapper.map_request(request, &self.defaults)?;
+                let response = self
+                    .model
+                    .stream(request)
+                    .await
+                    .map_err(|error| self.normalizer.normalize_error(error))?;
+                Ok(stream::completion_stream_with_normalizer(
+                    response,
+                    self.normalizer.provider(),
+                    self.streaming_normalizer.clone(),
+                ))
+            }
+            .await;
+            match result {
+                Ok(stream) => Ok(observability::observe_stream(stream, observation)),
+                Err(error) => {
+                    observation.finish_error(&error);
+                    Err(error)
+                }
+            }
         })
     }
 }
@@ -215,6 +272,7 @@ mod tests {
     fn bridge(model: ProbeModel) -> RigBridge<ProbeModel> {
         RigBridge::new(
             model,
+            "probe-model",
             capabilities(),
             GenerationOptions {
                 temperature: Some(0.25),

@@ -74,10 +74,12 @@ where
         .map_err(|_| BridgeError::InvalidConfiguration {
             message: "failed to construct Rig OpenAI client".to_owned(),
         })?;
+    let model_name = config.model.clone();
     let model = client.completion_model(config.model);
     let provider = config.provider;
     let bridge = RigBridge::new(
         model,
+        model_name,
         capabilities(),
         config.defaults,
         Arc::new(request_mapper),
@@ -121,7 +123,7 @@ mod tests {
 
     use super::{capabilities, create, create_validated, validate_config};
     use crate::providers::test_support::{
-        expected_text_stream, streaming_client, text_stream_client,
+        capture_info_logs, expected_text_stream, streaming_client, text_stream_client,
     };
 
     fn tool_call_id(value: &str) -> ToolCallId {
@@ -472,6 +474,81 @@ mod tests {
                         && metadata.http_status == Some(400)
             ));
         });
+    }
+
+    #[test]
+    fn default_info_tracing_excludes_credentials_headers_and_content() {
+        let (config, credential) = resolved_config(
+            "openai-compatible",
+            Some("http://compatible.test/v1"),
+            true,
+            json!({}),
+        );
+        let logs = capture_info_logs(|| {
+            futures::executor::block_on(async {
+                let http_client = RecordingHttpClient::new(
+                    json!({
+                        "id": "chatcmpl-safe-logs",
+                        "object": "chat.completion",
+                        "created": 1,
+                        "model": "compatible-model",
+                        "choices": [{
+                            "index": 0,
+                            "message": {
+                                "role": "assistant",
+                                "content": "response-content-secret-marker"
+                            },
+                            "logprobs": null,
+                            "finish_reason": "stop"
+                        }],
+                        "usage": {
+                            "prompt_tokens": 3,
+                            "completion_tokens": 2,
+                            "total_tokens": 5
+                        }
+                    })
+                    .to_string(),
+                );
+                let (config, credential, request_mapper) = validate_config(config, credential)
+                    .expect("compatible tracing config must validate");
+                let bridge =
+                    create_validated(config, credential, request_mapper, http_client.clone())
+                        .expect("compatible tracing bridge must construct");
+
+                bridge
+                    .complete(CompletionRequest {
+                        messages: vec![Message::user("request-content-secret-marker")],
+                        ..CompletionRequest::default()
+                    })
+                    .await
+                    .expect("compatible tracing request must complete");
+
+                let captured = http_client
+                    .requests()
+                    .into_iter()
+                    .next()
+                    .expect("compatible tracing request must reach transport");
+                assert_eq!(
+                    captured
+                        .headers
+                        .get("authorization")
+                        .expect("test request must contain authorization")
+                        .to_str()
+                        .expect("test authorization must be text"),
+                    "Bearer factory-test-secret"
+                );
+            });
+        });
+
+        assert!(logs.contains("LLM Bridge call completed"));
+        for secret in [
+            "factory-test-secret",
+            "authorization",
+            "request-content-secret-marker",
+            "response-content-secret-marker",
+        ] {
+            assert!(!logs.to_ascii_lowercase().contains(secret));
+        }
     }
 
     #[test]

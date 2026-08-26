@@ -10,6 +10,7 @@ pub(crate) mod anthropic;
 pub(crate) mod deepseek;
 pub(crate) mod minimax;
 pub(crate) mod moonshot;
+pub(crate) mod ollama;
 pub(crate) mod openai;
 
 #[cfg(test)]

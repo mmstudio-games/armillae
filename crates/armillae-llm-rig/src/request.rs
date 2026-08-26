@@ -1,6 +1,6 @@
 use armillae_core::{
     CompletionRequest as ArmillaeCompletionRequest, ContentPart, GenerationOptions, OutputFormat,
-    Role,
+    Role, ToolCallId,
 };
 use armillae_llm::BridgeError;
 use rig_core::completion::CompletionRequest as RigCompletionRequest;
@@ -211,6 +211,140 @@ fn validate_anthropic_schema(schema: &Value) -> Result<(), BridgeError> {
         }
     }
 
+    Ok(())
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct OllamaRequestMapper;
+
+impl OllamaRequestMapper {
+    pub(crate) fn new(provider_options: Value) -> Result<Self, BridgeError> {
+        let Value::Object(options) = provider_options else {
+            return invalid_configuration("Ollama provider_options must be a JSON object");
+        };
+        if !options.is_empty() {
+            return invalid_configuration("Ollama provider_options are not supported");
+        }
+        Ok(Self)
+    }
+}
+
+impl RigRequestMapper for OllamaRequestMapper {
+    fn map_request(
+        &self,
+        mut request: ArmillaeCompletionRequest,
+        defaults: &GenerationOptions,
+    ) -> Result<RigCompletionRequest, BridgeError> {
+        rewrite_ollama_tool_result_ids(&mut request)?;
+        let parts = convert::request_parts(request, defaults)?;
+        if !parts.extensions.values.is_empty() {
+            return invalid_request("Ollama request extensions are not supported");
+        }
+        if parts.tool_choice.is_some() {
+            return Err(BridgeError::UnsupportedCapability {
+                capability: "tool_choice".to_owned(),
+            });
+        }
+
+        let mut additional_params = Map::new();
+        if !parts.generation.stop.is_empty() {
+            additional_params.insert("stop".to_owned(), json!(parts.generation.stop));
+        }
+        if let Some(seed) = parts.generation.seed {
+            additional_params.insert("seed".to_owned(), json!(seed));
+        }
+
+        let mut mapped = RigCompletionRequest {
+            model: None,
+            preamble: None,
+            chat_history: parts.chat_history,
+            documents: Vec::new(),
+            tools: parts.tools,
+            temperature: parts.generation.temperature,
+            max_tokens: parts.generation.max_output_tokens,
+            tool_choice: None,
+            additional_params: (!additional_params.is_empty())
+                .then_some(Value::Object(additional_params)),
+            output_schema: None,
+            record_telemetry_content: false,
+        };
+        apply_ollama_output_format(&mut mapped, parts.output_format)?;
+        Ok(mapped)
+    }
+}
+
+fn rewrite_ollama_tool_result_ids(
+    request: &mut ArmillaeCompletionRequest,
+) -> Result<(), BridgeError> {
+    let mut tool_names = std::collections::BTreeMap::new();
+
+    for message in &mut request.messages {
+        for content in &mut message.content {
+            match content {
+                ContentPart::ToolCall(call) => {
+                    if call.name.trim().is_empty() {
+                        return invalid_request("Ollama ToolCall names must not be empty");
+                    }
+                    tool_names.insert(call.id.as_str().to_owned(), call.name.clone());
+                }
+                ContentPart::ToolResult(result) => {
+                    let name = tool_names.get(result.call_id.as_str()).ok_or_else(|| {
+                        BridgeError::InvalidRequest {
+                            message: "Ollama ToolResult requires its preceding Assistant ToolCall"
+                                .to_owned(),
+                        }
+                    })?;
+                    result.call_id =
+                        ToolCallId::new(name.clone()).map_err(|_| BridgeError::InvalidRequest {
+                            message: "Ollama ToolResult resolved to an empty tool name".to_owned(),
+                        })?;
+                }
+                _ => {}
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn apply_ollama_output_format(
+    request: &mut RigCompletionRequest,
+    output_format: Option<OutputFormat>,
+) -> Result<(), BridgeError> {
+    let schema = match output_format {
+        None | Some(OutputFormat::Text) => return Ok(()),
+        Some(OutputFormat::JsonObject) => json!({ "type": "object" }),
+        Some(OutputFormat::JsonSchema {
+            name,
+            schema,
+            strict,
+        }) => {
+            if name.trim().is_empty() {
+                return invalid_request("JSON Schema output name must not be empty");
+            }
+            if !schema.is_object() {
+                return invalid_request("Ollama output schema must be a JSON object");
+            }
+            if !strict {
+                return Err(BridgeError::UnsupportedCapability {
+                    capability: "output_format.json_schema.non_strict".to_owned(),
+                });
+            }
+            schema
+        }
+        Some(_) => {
+            return Err(BridgeError::UnsupportedCapability {
+                capability: "output_format.unknown".to_owned(),
+            });
+        }
+    };
+
+    request.output_schema =
+        Some(
+            serde_json::from_value(schema).map_err(|_| BridgeError::InvalidRequest {
+                message: "Ollama output schema is not a valid JSON Schema".to_owned(),
+            })?,
+        );
     Ok(())
 }
 

@@ -3,6 +3,10 @@ use armillae_llm::{
 };
 use rig_core::test_utils::SequencedStreamingHttpClient;
 use serde_json::Value;
+use std::{
+    io::{self, Write},
+    sync::{Arc, Mutex},
+};
 
 struct StaticSecretResolver;
 
@@ -120,4 +124,49 @@ pub(super) fn expected_text_stream() -> armillae_core::CompletionResponse {
         }),
         provider_metadata: serde_json::json!({}),
     }
+}
+
+pub(super) fn capture_info_logs(operation: impl FnOnce()) -> String {
+    #[derive(Clone, Default)]
+    struct SharedWriter(Arc<Mutex<Vec<u8>>>);
+
+    struct BufferWriter(Arc<Mutex<Vec<u8>>>);
+
+    impl<'writer> tracing_subscriber::fmt::MakeWriter<'writer> for SharedWriter {
+        type Writer = BufferWriter;
+
+        fn make_writer(&'writer self) -> Self::Writer {
+            BufferWriter(self.0.clone())
+        }
+    }
+
+    impl Write for BufferWriter {
+        fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+            self.0
+                .lock()
+                .map_err(|_| io::Error::other("trace buffer lock poisoned"))?
+                .extend_from_slice(buffer);
+            Ok(buffer.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    let writer = SharedWriter::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_writer(writer.clone())
+        .with_max_level(tracing::Level::INFO)
+        .with_ansi(false)
+        .without_time()
+        .finish();
+    tracing::subscriber::with_default(subscriber, operation);
+
+    let bytes = writer
+        .0
+        .lock()
+        .expect("trace buffer lock must not be poisoned")
+        .clone();
+    String::from_utf8(bytes).expect("tracing output must be UTF-8")
 }

@@ -18,10 +18,14 @@ futures-util = "0.3.34"
 rig-core = "=0.41.0"
 secrecy = "0.10"
 serde_json = "1"
+tracing = "0.1"
 
 [dev-dependencies]
 armillae-llm = { path = "../armillae-llm", features = ["mock"] }
+armillae-tools = { path = "../armillae-tools" }
 futures = "0.3"
 rig-core = { version = "=0.41.0", features = ["test-utils"] }
+schemars = "1"
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
+tracing-subscriber = "0.3"

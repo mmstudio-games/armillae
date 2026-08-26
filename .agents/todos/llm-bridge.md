@@ -1,15 +1,15 @@
 # LLM Bridge 与 Tool Executor 实施清单
 
-> 状态：Maintenance；OpenAI 协议 E2E 门禁 Active，其它 Provider 扩展 Paused
+> 状态：Active；第一阶段离线验收完成，等待 OpenAI 协议 Live 矩阵
 > 技术事实来源：[LLM Bridge 与 Tool Executor Spec](../specs/llm-bridge.md)
 > 设计入口：[Armillae 设计索引](../DESIGN.md)
-> 最后核对：2026-08-25
+> 最后核对：2026-08-26
 
 本清单只记录 LLM Bridge 与 Tool Executor 设计和当前实现之间的差异。
 
-当前 Workspace 与 P0 至 P5 已完成。主仓优先推进 Simulate，Anthropic P6 已在隔离分支实现；
-Ollama、可观测性和其它 Bridge 完善项继续暂停。OpenAI 协议端到端场景矩阵仍用于形成可审计
-的支持声明，不继续扩大 OpenAI-compatible Provider 范围。
+当前 Workspace 与 P0 至 P5、Anthropic P6 已完成。用户于 2026-08-26 恢复全部 LLM Bridge
+收尾；当前按 Ollama 与 Provider 一致性、可观测性与安全、示例与 Live 门禁、最终验收的顺序
+实施，不继续扩大既定 Provider 或公共协议范围。
 
 ## 总体边界
 
@@ -261,17 +261,18 @@ Ollama、可观测性和其它 Bridge 完善项继续暂停。OpenAI 协议端�
 - [x] 验证成功流只产生一个 `ResponseCompleted`，失败流不产生该事件。
 - [x] 验证 drop Stream 后底层调用取消。
 
-## OpenAI 协议端到端支持声明门禁（当前工作）
+## OpenAI 协议端到端支持声明门禁
 
-- [ ] 冻结“主流模型”的 Provider/模型版本矩阵、凭证来源、执行环境与通过标准。
-- [ ] 覆盖非流式与流式文本、System 和多轮历史。
-- [ ] 覆盖受支持的 JSON Object 与 JSON Schema 输出。
-- [ ] 覆盖 Tool Definition、单 ToolCall、多 ToolCall 与流式参数重组。
-- [ ] 覆盖显式 `LLM -> ToolCall -> ToolResult -> LLM` 端到端闭环。
-- [ ] 覆盖 Usage、finish reason、请求 ID、Provider 错误与能力预检。
-- [ ] 汇总脱敏测试证据并据此确定对外支持声明；完成前不宣称全量支持。
+- [x] 冻结“主流模型”的 Provider/模型版本矩阵、凭证来源、执行环境与通过标准。
+- [x] 提供默认 ignored 的 Live harness，覆盖文本、Streaming、System、多轮、结构化输出、
+      ToolCall、手工 ToolResult 闭环、Usage 和错误场景。
+- [ ] 使用真实凭证对冻结矩阵执行非流式与流式文本、System 和多轮历史。
+- [ ] 使用真实凭证对冻结矩阵执行 JSON Object/JSON Schema、单/多 ToolCall 与流式重组。
+- [ ] 使用真实凭证对冻结矩阵执行显式 `LLM -> ToolCall -> ToolResult -> LLM` 闭环。
+- [ ] 使用真实凭证核对 Usage、finish reason、请求 ID、Provider 错误与能力预检。
+- [x] 汇总离线脱敏证据并保持对外支持声明为“Live 未验证”；不得用离线测试推断全量支持。
 
-## P6：更多 Provider（Anthropic 已完成；其余暂停）
+## P6：更多 Provider
 
 ### Anthropic
 
@@ -285,62 +286,62 @@ Ollama、可观测性和其它 Bridge 完善项继续暂停。OpenAI 协议端�
 
 ### Ollama
 
-- [ ] 实现 Ollama Provider factory、配置和能力矩阵。
-- [ ] 完成本地 endpoint 与 NDJSON 传输路径。
-- [ ] 完成非流式文本、单/多 ToolCall 和后续 ToolResult 请求。
-- [ ] 完成流式文本与 ToolCall 参数重组。
-- [ ] 完成 Usage、finish reason、错误和未知事件映射。
-- [ ] 通过共享 Bridge 与 Streaming 合约测试。
+- [x] 实现 Ollama Provider factory、配置和能力矩阵。
+- [x] 完成本地 endpoint 与 NDJSON 传输路径。
+- [x] 完成非流式文本、单/多 ToolCall 和后续 ToolResult 请求。
+- [x] 完成流式文本与 Rig 已暴露的完整结构化 ToolCall 参数事件。
+- [x] 完成 Usage、finish reason 和错误映射；记录 rig 已过滤未知 NDJSON 字段的显式限制。
+- [x] 通过共享 Bridge 与 Streaming 合约测试。
 
 ### Provider 一致性
 
-- [ ] 为所有 Provider 维护同一外部协议和明确的能力矩阵。
-- [ ] Provider 不支持的能力由本地预检拒绝，不静默降级。
-- [ ] 转换单元测试保持离线，Mock HTTP/cassette 测试不依赖真实 Provider。
-- [ ] Live 测试默认 ignored，仅在发布前使用明确提供的真实凭证运行。
+- [x] 为所有 Provider 维护同一外部协议和明确的能力矩阵。
+- [x] Provider 不支持的能力由本地预检拒绝，不静默降级。
+- [x] 转换单元测试保持离线，Mock HTTP/cassette 测试不依赖真实 Provider。
+- [x] Live 测试默认 ignored，仅在发布前使用明确提供的真实凭证运行。
 
 ## 横切要求
 
 ### 可观测性
 
-- [ ] 提供结构化 tracing，记录 Adapter、Provider、model、请求 ID 和是否流式。
-- [ ] 记录 Tool Definition/ToolCall 数量、token usage、总延迟和首 token 延迟。
-- [ ] 使用标准化错误类别，避免记录完整正文或原始敏感响应。
-- [ ] 内容级调试必须显式启用，并允许宿主提供脱敏器。
+- [x] 提供结构化 tracing，记录 Adapter、Provider、model、请求 ID 和是否流式。
+- [x] 记录 Tool Definition/ToolCall 数量、token usage、总延迟和首 token 延迟。
+- [x] 使用标准化错误类别，避免记录完整正文或原始敏感响应。
+- [x] 第一阶段不提供内容级调试或通用脱敏器 API，固定关闭 rig 正文遥测并记录其日志边界。
 
 ### 安全
 
-- [ ] 验证 API Key、Authorization header 和 Secret 不出现在日志、错误、Debug、fixture 或快照。
-- [ ] 验证默认不记录完整消息、Tool 参数和 ToolResult。
-- [ ] 验证动态 endpoint 配置不能绕过宿主 SSRF 限制。
-- [ ] 验证 `provider_options` 未知字段和错误类型在构造阶段被拒绝。
-- [ ] 在提交 fixture 前扫描真实凭证、用户隐私内容和未经脱敏的 Provider 响应。
+- [x] 验证 API Key、Authorization header 和 Secret 不出现在日志、错误和 Debug。
+- [x] 验证默认不记录完整消息、Tool 参数和 ToolResult。
+- [x] 验证动态 endpoint 配置不能绕过宿主 SSRF 限制。
+- [x] 验证 `provider_options` 未知字段和错误类型在构造阶段被拒绝。
+- [x] 在提交 fixture 前扫描真实凭证、用户隐私内容和未经脱敏的 Provider 响应。
 
 ### 示例与文档
 
-- [ ] 添加 `simple_completion` 示例。
-- [ ] 添加 `streaming` 示例。
-- [ ] 添加显式 `manual_tool_flow` 示例。
-- [ ] 文档化配置文件与 Rust Builder 的等价用法。
-- [ ] 文档化 Provider 能力矩阵、兼容策略和不支持能力的错误行为。
-- [ ] 文档化 Secret、endpoint、日志和 Live 测试的安全边界。
+- [x] 添加 `simple_completion` 示例。
+- [x] 添加 `streaming` 示例。
+- [x] 添加显式 `manual_tool_flow` 示例。
+- [x] 文档化配置文件与 Rust Builder 的等价用法。
+- [x] 文档化 Provider 能力矩阵、兼容策略和不支持能力的错误行为。
+- [x] 文档化 Secret、endpoint、日志和 Live 测试的安全边界。
 
 ## 第一阶段完成条件
 
-- [ ] 同一 `CompletionRequest`/`CompletionResponse` 协议可用于所有已支持 Provider。
-- [ ] TOML、JSON 和 Rust Builder 可生成同一个 Bridge 实例。
-- [ ] 非流式和流式文本响应均通过共享合约测试。
-- [ ] Tool Definition 可以发送给模型。
-- [ ] 单个和多个 ToolCall 均可完整解析并保持顺序与 ID。
-- [ ] ToolCall 参数在任意流式分片下无损重组。
-- [ ] ToolResult 可以作为后续请求消息发送给模型。
-- [ ] 下游可以通过 ToolRegistry 类型安全地执行 ToolCall。
-- [ ] Bridge 不执行 Tool，Tool Executor 不调用 Bridge。
-- [ ] Usage、finish reason、请求 ID 和错误类别已标准化。
-- [ ] MockBridge 和所有真实 Adapter 均通过共享合约测试。
-- [ ] 除 `armillae-llm-rig` 外没有 crate 依赖或暴露 rig 类型。
-- [ ] 格式检查、Clippy、单元测试、文档构建和离线合约测试全部通过。
-- [ ] `.agents/specs/llm-bridge.md`、本清单、示例和当前实现保持一致。
+- [x] 同一 `CompletionRequest`/`CompletionResponse` 协议可用于所有已支持 Provider。
+- [x] TOML、JSON 和 Rust Builder 可生成同一个 Bridge 实例。
+- [x] 非流式和流式文本响应均通过共享合约测试。
+- [x] Tool Definition 可以发送给模型。
+- [x] 单个和多个 ToolCall 均可完整解析并保持顺序与 ID。
+- [x] ToolCall 参数在任意流式分片下无损重组。
+- [x] ToolResult 可以作为后续请求消息发送给模型。
+- [x] 下游可以通过 ToolRegistry 类型安全地执行 ToolCall。
+- [x] Bridge 不执行 Tool，Tool Executor 不调用 Bridge。
+- [x] Usage、finish reason、请求 ID 和错误类别已标准化。
+- [x] MockBridge 和所有真实 Adapter 均通过共享合约测试。
+- [x] 除 `armillae-llm-rig` 外没有 crate 依赖或暴露 rig 类型。
+- [x] 格式检查、Clippy、单元测试、文档构建和离线合约测试全部通过。
+- [x] `.agents/specs/llm-bridge.md`、本清单、示例和当前实现保持一致。
 
 ## 当前不实施的生态方向
 

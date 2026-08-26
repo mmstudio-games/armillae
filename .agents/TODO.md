@@ -11,7 +11,7 @@
 
 | 范围 | 清单 | 状态 | 当前重点 |
 |---|---|---|---|
-| LLM Bridge 与 Tool Executor | [todos/llm-bridge.md](todos/llm-bridge.md) | Maintenance | Anthropic P6 已完成；OpenAI 协议 E2E 支持声明门禁 |
+| LLM Bridge 与 Tool Executor | [todos/llm-bridge.md](todos/llm-bridge.md) | Active | 离线验收完成；等待有授权凭证的 OpenAI 协议 Live 矩阵 |
 | Simulate | [todos/simulate.md](todos/simulate.md) | Planned | 公共 API/协议已冻结；先完成 Bevy P0 Spike，再创建产品 crate |
 | 项目与发布 | [todos/project.md](todos/project.md) | Active | 首次多 crate 发布验证 |
 | Agentic 叙事运行时 | 暂无实施清单 | Discovery | 以 [Simulate Spec](specs/simulate.md) 为下层边界，继续完成 [RFC 0001](rfcs/0001-agentic-runtime.md) |

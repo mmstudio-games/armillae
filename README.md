@@ -14,16 +14,17 @@ Armillae is alpha software. The implemented LLM foundation currently provides:
 - a runtime-independent `LlmBridge` for exactly one model call;
 - type-safe Tool authoring, registration, and exactly one ToolCall execution;
 - deterministic mocks and shared Bridge contract tests;
-- Rig adapters for OpenAI, generic OpenAI-compatible endpoints, DeepSeek, MiniMax, Moonshot, and
-  Anthropic;
+- Rig adapters for OpenAI, generic OpenAI-compatible endpoints, DeepSeek, MiniMax, Moonshot,
+  Anthropic, and Ollama;
 - non-streaming and streaming text and ToolCall support for the implemented providers.
 
 The OpenAI-protocol baseline still requires an explicit end-to-end Provider/model scenario matrix
 before a formal full-support claim. The native Anthropic Messages adapter uses a conservative
 profile: requests require `max_output_tokens`, `ToolResult.is_error = true` is rejected because Rig
 0.41 cannot preserve it, and raw unknown Anthropic SSE events filtered by Rig are not exposed.
-Ollama and other Bridge expansion work remains paused while the Agentic narrative runtime evolves
-as an independent upper layer.
+Ollama uses a conservative native profile and generates Armillae ToolCall IDs because its wire
+protocol does not provide them. See the [LLM Bridge guide](docs/llm-bridge.md) for configuration,
+capabilities, examples, security boundaries, and the ignored Live support gate.
 
 ## Crates
 

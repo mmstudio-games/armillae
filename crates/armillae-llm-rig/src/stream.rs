@@ -1,4 +1,7 @@
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::{
+    collections::{BTreeMap, BTreeSet, VecDeque},
+    sync::Arc,
+};
 
 use armillae_core::{
     AssistantContent, CompletionEvent, CompletionResponse, ContentKind, ProviderData, TextContent,
@@ -13,8 +16,12 @@ use rig_core::{
 };
 use serde_json::{Map, Value, json};
 
-use crate::convert;
+use crate::{convert, response::RigStreamingResponseNormalizer};
 
+#[cfg(test)]
+use crate::response::NoopStreamingResponseNormalizer;
+
+#[cfg(test)]
 pub(crate) fn completion_stream<R>(
     stream: StreamingCompletionResponse<R>,
     provider: impl Into<String>,
@@ -22,7 +29,18 @@ pub(crate) fn completion_stream<R>(
 where
     R: Clone + Unpin + GetTokenUsage + Send + 'static,
 {
-    let state = StreamState::new(stream, provider.into());
+    completion_stream_with_normalizer(stream, provider, Arc::new(NoopStreamingResponseNormalizer))
+}
+
+pub(crate) fn completion_stream_with_normalizer<R>(
+    stream: StreamingCompletionResponse<R>,
+    provider: impl Into<String>,
+    normalizer: Arc<dyn RigStreamingResponseNormalizer<R>>,
+) -> CompletionStream
+where
+    R: Clone + Unpin + GetTokenUsage + Send + 'static,
+{
+    let state = StreamState::new(stream, provider.into(), normalizer);
     Box::pin(stream::unfold(state, |mut state| async move {
         state.next_output().await.map(|output| (output, state))
     }))
@@ -33,6 +51,7 @@ where
     R: Clone + Unpin + GetTokenUsage,
 {
     stream: StreamingCompletionResponse<R>,
+    normalizer: Arc<dyn RigStreamingResponseNormalizer<R>>,
     provider: String,
     pending: VecDeque<CompletionEvent>,
     content: BTreeMap<usize, AssistantContent>,
@@ -42,6 +61,8 @@ where
     active_reasoning: Option<ReasoningState>,
     next_content_index: usize,
     usage: Option<TokenUsage>,
+    finish_reason: Option<armillae_core::FinishReason>,
+    provider_metadata: Value,
     final_received: bool,
     finished: bool,
     failed: bool,
@@ -51,9 +72,14 @@ impl<R> StreamState<R>
 where
     R: Clone + Unpin + GetTokenUsage,
 {
-    fn new(stream: StreamingCompletionResponse<R>, provider: String) -> Self {
+    fn new(
+        stream: StreamingCompletionResponse<R>,
+        provider: String,
+        normalizer: Arc<dyn RigStreamingResponseNormalizer<R>>,
+    ) -> Self {
         Self {
             stream,
+            normalizer,
             provider,
             pending: VecDeque::from([CompletionEvent::ResponseStarted {
                 id: None,
@@ -66,6 +92,8 @@ where
             active_reasoning: None,
             next_content_index: 0,
             usage: None,
+            finish_reason: None,
+            provider_metadata: Value::Object(Map::new()),
             final_received: false,
             finished: false,
             failed: false,
@@ -141,6 +169,9 @@ where
                 self.close_text();
                 self.close_reasoning()?;
                 self.usage = convert::usage_from_rig(response.token_usage());
+                let facts = self.normalizer.normalize(&response)?;
+                self.finish_reason = facts.finish_reason;
+                self.provider_metadata = facts.provider_metadata;
                 self.final_received = true;
             }
             StreamedAssistantContent::Unknown(value) => {
@@ -491,9 +522,9 @@ where
                 id: None,
                 model: None,
                 content,
-                finish_reason: None,
+                finish_reason: self.finish_reason.clone(),
                 usage: self.usage.clone(),
-                provider_metadata: Value::Object(Map::new()),
+                provider_metadata: self.provider_metadata.clone(),
             },
         });
         self.finished = true;

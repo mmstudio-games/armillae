@@ -1,13 +1,14 @@
 # Armillae LLM Bridge 与 Tool Executor 规范
 
-> 状态：Active Spec；OpenAI 协议基线维护中；Anthropic P6 已实现
+> 状态：Active Spec；第一阶段离线实现已完成；OpenAI 协议 Live 门禁 Active
 > 规范基线：2026-08-13
 > 适用范围：`armillae-core`、`armillae-llm`、`armillae-tools`、`armillae-llm-rig`
 > 设计入口：[Armillae 设计索引](../DESIGN.md)
 > 后续方向：[RFC 0001：Agentic 叙事运行时](../rfcs/0001-agentic-runtime.md)
 
-本文保留第一阶段设计基线、协议决策和验收证据。主仓优先推进 Simulate，Anthropic P6 已在
-隔离分支实现；Ollama、可观测性及其它 Provider 扩展继续暂停，不再与 Agentic 运行时设计混写。
+本文保留第一阶段设计基线、协议决策和验收证据。用户于 2026-08-26 恢复 LLM Bridge 全部
+收尾；本批次只完成既定 Ollama、Provider 一致性、结构化可观测性、安全、示例、Live 门禁与
+最终验收，不扩大到新的 Driver、Provider Registry、内容调试协议或 Agentic 运行时职责。
 
 ## 1. 背景
 
@@ -220,7 +221,7 @@ armillae/
 │               ├── anthropic.rs
 │               └── ollama.rs
 │
-└── examples/
+└── crates/armillae-llm-rig/examples/
     ├── simple_completion.rs
     ├── streaming.rs
     └── manual_tool_flow.rs
@@ -1283,6 +1284,34 @@ rig Unknown item 继续生成 `ProviderEvent`，但不复制传输层来捕获 r
 终端事实保持 `None`，不得推断。需要原始未知 Anthropic SSE 的使用场景应选择保留该能力的其它
 Driver。这是 Rig Provider 边界的显式能力限制，不作为升级 Rig 或引入原生 Adapter 的理由。
 
+Ollama 使用 rig 原生 `/api/chat` Client，默认 endpoint 为 `http://localhost:11434`，允许经过
+通用校验和宿主 `EndpointPolicy` 的显式 HTTP/HTTPS endpoint。Ollama 默认不要求 credential；
+当配置 credential 时按 rig 契约发送 Bearer token，以支持反向代理或受保护部署。本阶段不开放
+Ollama `provider_options` 或请求扩展，避免将 `think`、`keep_alive` 和任意模型参数绕过公共协议
+带入 wire。公共 temperature 与 max output tokens 分别由 rig 映射为 `options.temperature` 和
+`options.num_predict`；stop 与 seed 显式映射为 `options.stop` 和 `options.seed`。
+
+Ollama 使用保守能力预设：支持 Streaming、System、Tool Calling、并行 ToolCall、JSON Object
+和 JSON Schema；不支持 Developer role，也不声明任何 ToolChoice 变体，因为 rig 0.41 会警告后
+忽略该字段。JSON Object 通过最小 object schema 下发；JSON Schema 要求非空 name、object
+schema 和 `strict = true`，name 只作为 Armillae 描述字段，不进入 Ollama wire。模型是否实际
+遵循 schema 或调用 Tool 仍可能因本地模型而异，远端拒绝必须标准化，Adapter 不自动降级。
+
+Ollama 原生 ToolCall 不提供调用 ID，ToolResult 只通过 `tool_name` 关联。Adapter 必须为每个
+返回 ToolCall 生成响应内唯一的 Armillae ID；调用方把 Assistant ToolCall 和 ToolResult 放回
+后续历史时，Request Mapper 按先前 ToolCall ID 显式恢复工具名。多个同名 ToolCall 依靠原始
+顺序关联，Armillae ID 与内容顺序保持稳定；缺少先前 ToolCall 的孤立 ToolResult 必须本地拒绝。
+Ollama wire 也不承载 `ToolResult.is_error`，因此沿用 OpenAI 的显式省略策略，保留调用方给出的
+content，不拒绝或自动包装错误结果。
+
+Ollama 非流式响应不提供 response ID，model 必须非空；`done_reason` 映射为标准或 Unknown
+finish reason，评估计数映射为 Usage，受控的 created-at 和 duration 数据进入 metadata。流式
+NDJSON 由 rig 负责跨 HTTP/UTF-8 chunk 重组；ToolCall 在 rig 0.41 中以完整结构化参数事件暴露，
+因此 Adapter 不伪造不存在的字符串 delta。terminal item 已暴露的 `done_reason`、Usage 和安全
+duration metadata 必须进入最终响应；stream model 被 rig 丢弃时保持 `None`。rig 的 Ollama
+parser 会忽略未知 JSON 字段且不产生 Unknown item，Adapter 不建立第二套 NDJSON 传输层捕获它们；
+需要原始未知事件的用户应选择能够保留该事实的 Driver。
+
 P5 Streaming 复用相同的 Request Mapper、能力预检和 rig `CompletionModel::stream` 传输边界，
 由 Provider 无关的私有流式状态机将 rig item 转换为 Armillae 事件。五个当前 Provider 使用同一
 Streaming 合约，不为具名 Provider 复制或分叉公共语义。MiniMax 和 Moonshot 仍不接入
@@ -1348,7 +1377,7 @@ Rig Error                  → Armillae BridgeError
    保守能力预检和 Provider-specific raw response 归一化，再与 OpenAI/OpenAI-compatible
    一同通过 P5 Streaming 合约。
 3. Anthropic：在隔离分支验证原生 Tool 协议、消息差异和统一 Streaming 合约。
-4. Ollama：未来验证本地 Provider 和 NDJSON 流式路径。
+4. Ollama：验证本地 Provider、无原生调用 ID 的 Tool 协议和 NDJSON 流式路径。
 
 Provider 支持必须通过同一套 Bridge 合约测试，而不是分别定义不同的外部行为。
 
@@ -1471,8 +1500,21 @@ let final_response = bridge
 - Usage、finish reason、请求 ID 和错误分类；
 - 不支持能力的本地预检以及 Provider 远端拒绝。
 
-“主流模型”的具体清单、凭证来源、执行环境与通过标准尚未冻结，不能由 Adapter 名称或单元
-测试结果推断。端到端测试默认不得进入普通离线 CI，也不得提交真实凭证或未脱敏响应。
+本阶段支持声明门禁冻结为以下矩阵；它是可重复验证基线，不代表“总是选择最新模型”：
+
+| Provider | 模型 | credential 环境变量 | endpoint |
+| --- | --- | --- | --- |
+| `openai` | `gpt-4.1-mini` | `OPENAI_API_KEY` | rig 默认 OpenAI endpoint |
+| `deepseek` | `deepseek-chat` | `DEEPSEEK_API_KEY` | rig 默认全球 endpoint |
+| `minimax` | `MiniMax-M2` | `MINIMAX_API_KEY` | rig 默认全球 endpoint |
+| `moonshot` | `kimi-k2` | `MOONSHOT_API_KEY` | rig 默认全球 endpoint |
+
+Live harness 默认 ignored，在具备明确凭证的发布工作站上串行执行，不进入普通离线 CI。每个
+Provider 必须通过上述全部适用场景；能力矩阵明确不支持的场景以本地预检成功拒绝为通过。证据
+只记录日期、配置的模型 ID、Provider 返回的实际模型、场景结果和标准化错误类别，不保存 prompt、
+响应正文、Tool 参数、ToolResult、header 或 Secret。环境变量允许临时覆盖模型仅用于探索；覆盖
+结果不能替代冻结矩阵的发布门禁。当前没有真实凭证时只能提交 harness 和“未执行”状态，不得把
+离线测试推断成 Live 通过证据或对外全量支持声明。
 
 ## 12. 可观测性与安全
 
@@ -1494,7 +1536,16 @@ let final_response = bridge
 - 完整 Tool 参数和 ToolResult；
 - Provider 原始响应正文。
 
-需要内容级调试时必须通过显式配置启用，并允许宿主提供脱敏器。
+Rig Adapter 使用 `armillae::llm` target 和 `llm.bridge.call` span 表达上述事实，字段名保持稳定；
+成功、标准化错误、流中断和调用方 drop 都必须结束一次观测。非流式首 token 延迟不可观测，保持
+缺失；流式首个文本、ToolCall 或 ProviderData 语义事件记录 first-token latency。所有计数和延迟
+都来自本地时钟或标准化响应，不读取正文推断。
+
+本阶段不提供内容级调试开关或宿主脱敏器公共 API。所有发给 rig 的请求继续固定
+`record_telemetry_content = false`，Armillae 自身 span/event 永不记录正文；这是比引入尚无使用
+证据的通用 redactor 更小且更安全的收尾。rig 0.41 的 Ollama 实现在 `rig` DEBUG target 中会输出
+原始 NDJSON 行，生产宿主不得启用 `rig`/`rig::completions` 的 DEBUG/TRACE；需要安全的内容级调试
+时应先升级或替换 Driver，并通过新的设计变更引入脱敏契约，不能复用本阶段结构化 tracing 冒充。
 
 ## 13. 实施计划与优先级
 

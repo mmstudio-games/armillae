@@ -1,4 +1,6 @@
-use armillae_core::{CompletionResponse as ArmillaeCompletionResponse, FinishReason};
+use armillae_core::{
+    AssistantContent, CompletionResponse as ArmillaeCompletionResponse, FinishReason,
+};
 use armillae_llm::{BridgeError, ErrorMetadata};
 use rig_core::{
     completion::{CompletionError, CompletionResponse as RigCompletionResponse},
@@ -21,8 +23,37 @@ pub(crate) trait RigResponseNormalizer<R>: Send + Sync {
 
     fn normalize(&self, raw_response: &R) -> Result<NormalizedResponseFacts, BridgeError>;
 
+    fn normalize_content(
+        &self,
+        content: Vec<AssistantContent>,
+    ) -> Result<Vec<AssistantContent>, BridgeError> {
+        Ok(content)
+    }
+
     fn normalize_error(&self, error: CompletionError) -> BridgeError {
         normalize_completion_error(self.provider(), error)
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct NormalizedStreamingResponseFacts {
+    pub(crate) finish_reason: Option<FinishReason>,
+    pub(crate) provider_metadata: Value,
+}
+
+pub(crate) trait RigStreamingResponseNormalizer<R>: Send + Sync {
+    fn normalize(&self, raw_response: &R) -> Result<NormalizedStreamingResponseFacts, ()>;
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct NoopStreamingResponseNormalizer;
+
+impl<R> RigStreamingResponseNormalizer<R> for NoopStreamingResponseNormalizer {
+    fn normalize(&self, _raw_response: &R) -> Result<NormalizedStreamingResponseFacts, ()> {
+        Ok(NormalizedStreamingResponseFacts {
+            finish_reason: None,
+            provider_metadata: Value::Object(Map::new()),
+        })
     }
 }
 
@@ -86,6 +117,7 @@ pub(crate) fn response_from_rig<R>(
 ) -> Result<ArmillaeCompletionResponse, BridgeError> {
     let facts = normalizer.normalize(&response.raw_response)?;
     let content = convert::assistant_content_from_rig(response.choice, normalizer.provider())?;
+    let content = normalizer.normalize_content(content)?;
 
     Ok(ArmillaeCompletionResponse {
         id: facts.id,

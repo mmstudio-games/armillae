@@ -14,14 +14,16 @@ Armillae 目前处于 alpha 阶段。已经实现的 LLM 基础设施提供：
 - 一次只执行一个 Model Call、且不依赖具体异步运行时的 `LlmBridge`；
 - 类型安全的 Tool 定义、注册与单次 ToolCall 执行；
 - 确定性的 Mock 与共享 Bridge 合约测试；
-- OpenAI、通用 OpenAI-compatible、DeepSeek、MiniMax、Moonshot 和 Anthropic 的 Rig Adapter；
+- OpenAI、通用 OpenAI-compatible、DeepSeek、MiniMax、Moonshot、Anthropic 和 Ollama 的 Rig
+  Adapter；
 - 上述已实现 Provider 的非流式及流式文本和 ToolCall 支持。
 
 OpenAI 协议基线在正式宣称全量支持前，仍需通过明确的 Provider/模型端到端场景矩阵。
 Anthropic 原生 Messages Adapter 使用保守能力配置：请求必须提供 `max_output_tokens`；Rig 0.41
 无法保留 `ToolResult.is_error = true`，因此 Adapter 会显式拒绝；Rig 已过滤的 Anthropic 原始
-未知 SSE 事件不会暴露。Ollama 和其它 Bridge 扩展继续暂停，Agentic 叙事运行时作为独立上层
-演进。
+未知 SSE 事件不会暴露。Ollama 使用保守的原生能力配置；由于其线协议没有调用 ID，Adapter 会
+生成 Armillae ToolCall ID，并在后续 ToolResult 请求中映射回工具名。配置、能力矩阵、示例、安全
+边界和默认 ignored 的 Live 支持门禁见 [LLM Bridge 使用指南](docs/llm-bridge.md)。
 
 ## Crate
 

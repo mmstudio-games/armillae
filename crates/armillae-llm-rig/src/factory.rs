@@ -35,6 +35,7 @@ fn create_bridge(config: ResolvedBridgeConfig) -> Result<Arc<dyn LlmBridge>, Bri
         "deepseek" => providers::deepseek::create(config, credential),
         "minimax" => providers::minimax::create(config, credential),
         "moonshot" => providers::moonshot::create(config, credential),
+        "ollama" => providers::ollama::create(config, credential),
         "openai" | "openai-compatible" => providers::openai::create(config, credential),
         provider => invalid_configuration(format!(
             "RigBridgeFactory does not support provider: {provider}"
@@ -93,7 +94,7 @@ mod tests {
         let wrong_driver =
             futures::executor::block_on(factory.create(resolved_config("other", "openai")));
         let unsupported_provider =
-            futures::executor::block_on(factory.create(resolved_config("rig", "ollama")));
+            futures::executor::block_on(factory.create(resolved_config("rig", "unknown")));
 
         assert!(matches!(
             wrong_driver,
@@ -121,5 +122,17 @@ mod tests {
 
         futures::executor::block_on(factory.create(resolved_config("rig", "anthropic")))
             .expect("factory must route Anthropic");
+    }
+
+    #[test]
+    fn factory_routes_ollama_without_requiring_a_credential() {
+        let config = BridgeConfig::builder("rig", "ollama", "test-model")
+            .build()
+            .expect("Ollama factory test config must validate");
+        let resolved = futures::executor::block_on(config.resolve(None, None))
+            .expect("Ollama factory test config must resolve");
+
+        futures::executor::block_on(RigBridgeFactory.create(resolved))
+            .expect("factory must route Ollama");
     }
 }

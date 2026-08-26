@@ -68,9 +68,11 @@ where
         .map_err(|_| BridgeError::InvalidConfiguration {
             message: "failed to construct Rig Anthropic client".to_owned(),
         })?;
+    let model_name = config.model.clone();
     let model = client.completion_model(config.model);
     let bridge = RigBridge::new(
         model,
+        model_name,
         capabilities(),
         config.defaults,
         Arc::new(request_mapper),
