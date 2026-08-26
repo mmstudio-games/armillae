@@ -52,8 +52,8 @@ fn invalid_configuration<T>(message: impl Into<String>) -> Result<T, BridgeError
 #[cfg(test)]
 mod tests {
     use armillae_llm::{
-        BoxFuture, BridgeConfig, BridgeError, BridgeFactory, CredentialRef, SecretResolver,
-        SecretString,
+        BoxFuture, BridgeConfig, BridgeError, BridgeFactory, BridgeResolveContext, CredentialRef,
+        SecretResolver, SecretString,
     };
 
     use super::RigBridgeFactory;
@@ -77,10 +77,10 @@ mod tests {
             .build()
             .expect("factory test config must pass common validation");
 
-        futures::executor::block_on(
-            config.resolve(Some(&StaticSecretResolver as &dyn SecretResolver), None),
-        )
-        .expect("factory test config must resolve")
+        let context = BridgeResolveContext::new()
+            .secret_resolver(&StaticSecretResolver as &dyn SecretResolver);
+        futures::executor::block_on(config.resolve_with(context))
+            .expect("factory test config must resolve")
     }
 
     #[test]
@@ -129,7 +129,7 @@ mod tests {
         let config = BridgeConfig::builder("rig", "ollama", "test-model")
             .build()
             .expect("Ollama factory test config must validate");
-        let resolved = futures::executor::block_on(config.resolve(None, None))
+        let resolved = futures::executor::block_on(config.resolve())
             .expect("Ollama factory test config must resolve");
 
         futures::executor::block_on(RigBridgeFactory.create(resolved))

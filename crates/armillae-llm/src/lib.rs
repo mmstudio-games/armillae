@@ -11,8 +11,8 @@ pub mod mock;
 pub use bridge::{BoxFuture, CompletionStream, LlmBridge};
 pub use capability::{BridgeCapabilities, OutputFormatCapabilities, ToolChoiceCapabilities};
 pub use config::{
-    BRIDGE_CONFIG_API_VERSION, BridgeConfig, BridgeConfigBuilder, CredentialRef, EndpointPolicy,
-    ResolvedBridgeConfig, SecretResolver, TransportConfig,
+    BRIDGE_CONFIG_API_VERSION, BridgeConfig, BridgeConfigBuilder, BridgeResolveContext,
+    CredentialRef, EndpointPolicy, ResolvedBridgeConfig, SecretResolver, TransportConfig,
 };
 pub use error::{BridgeError, ErrorMetadata};
 pub use factory::BridgeFactory;

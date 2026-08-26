@@ -159,6 +159,8 @@
 - [x] 在构造阶段校验配置版本、Provider、model、transport 和 `provider_options`。
 - [x] 默认允许通过通用 URL 校验的自定义 endpoint，并允许宿主选择性限制 scheme、host 或
       网络范围。
+- [x] 将常规配置解析收敛为零参数 `BridgeConfig::resolve()`，并通过私有字段、链式构造的
+      `BridgeResolveContext` 和 `resolve_with(...)` 组合宿主 Secret Resolver 与 EndpointPolicy。
 - [x] 实现 object-safe `BridgeFactory`。
 - [x] 在 `armillae-llm-rig` 中直接提供第一阶段的 `RigBridgeFactory`。
 - [x] 不提前实现动态 Adapter 插件 Registry。

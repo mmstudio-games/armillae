@@ -115,7 +115,8 @@ mod tests {
         ToolResultContent,
     };
     use armillae_llm::{
-        BoxFuture, BridgeConfig, BridgeError, CredentialRef, SecretResolver, SecretString,
+        BoxFuture, BridgeConfig, BridgeError, BridgeResolveContext, CredentialRef, SecretResolver,
+        SecretString,
         mock::contract::{verify_completion, verify_stream},
     };
     use rig_core::test_utils::{MockHttpResponse, RecordingHttpClient};
@@ -164,11 +165,14 @@ mod tests {
         let config = builder
             .build()
             .expect("provider test config must pass common validation");
-        let resolved = futures::executor::block_on(config.resolve(
-            with_credential.then_some(&StaticSecretResolver as &dyn SecretResolver),
-            None,
-        ))
-        .expect("provider test config must resolve");
+        let context = BridgeResolveContext::new();
+        let context = if with_credential {
+            context.secret_resolver(&StaticSecretResolver as &dyn SecretResolver)
+        } else {
+            context
+        };
+        let resolved = futures::executor::block_on(config.resolve_with(context))
+            .expect("provider test config must resolve");
 
         resolved.into_parts()
     }

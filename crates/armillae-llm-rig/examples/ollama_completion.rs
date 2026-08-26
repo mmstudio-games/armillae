@@ -5,7 +5,7 @@ use armillae_llm_rig::RigBridgeFactory;
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = BridgeConfig::builder("rig", "ollama", "qwen3:8b").build()?;
-    let resolved = config.resolve(None, None).await?;
+    let resolved = config.resolve().await?;
     let bridge = RigBridgeFactory.create(resolved).await?;
 
     let response = bridge

@@ -103,11 +103,38 @@ use armillae_llm_rig::RigBridgeFactory;
 
 # async fn create(config: armillae_llm::BridgeConfig)
 #     -> Result<std::sync::Arc<dyn LlmBridge>, armillae_llm::BridgeError> {
-let resolved = config.resolve(None, None).await?;
+let resolved = config.resolve().await?;
 let bridge = RigBridgeFactory.create(resolved).await?;
 # Ok(bridge)
 # }
 ```
+
+`resolve()` is the common path for Environment, File, or credential-free configurations. It
+validates the configuration and turns the credential reference into a non-serializable, redacted
+`ResolvedBridgeConfig`. A host only needs `resolve_with(...)` when it uses
+`CredentialRef::Resolver` for an external Secret store or applies an `EndpointPolicy` to an
+explicit endpoint:
+
+```rust
+use armillae_llm::BridgeResolveContext;
+
+# async fn resolve_with_host_services(
+#     config: &armillae_llm::BridgeConfig,
+#     secret_resolver: &dyn armillae_llm::SecretResolver,
+#     endpoint_policy: &dyn armillae_llm::EndpointPolicy,
+# ) -> Result<(), armillae_llm::BridgeError> {
+let context = BridgeResolveContext::new()
+    .secret_resolver(secret_resolver)
+    .endpoint_policy(endpoint_policy);
+let resolved = config.resolve_with(context).await?;
+# let _ = resolved;
+# Ok(())
+# }
+```
+
+The Secret Resolver is consulted only for `CredentialRef::Resolver { key }`; Environment and File
+references remain built in. EndpointPolicy is a host allowlist or trust rule for custom endpoints,
+not a Provider setting. Named Providers using their default endpoint normally need neither hook.
 
 For a local Ollama daemon, use provider `ollama`, a model such as `qwen3:8b`, no credential, and no
 endpoint. Configure a credential only for a protected proxy. All explicit endpoints pass structural
@@ -137,7 +164,7 @@ let config = BridgeConfig::builder("rig", "openai", "gpt-4.1-mini")
     })
     .build()?;
 let bridge = RigBridgeFactory
-    .create(config.resolve(None, None).await?)
+    .create(config.resolve().await?)
     .await?;
 let response = bridge
     .complete(CompletionRequest {
@@ -308,7 +335,7 @@ use armillae_llm_rig::RigBridgeFactory;
 # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 let config = BridgeConfig::builder("rig", "ollama", "qwen3:8b").build()?;
 let bridge = RigBridgeFactory
-    .create(config.resolve(None, None).await?)
+    .create(config.resolve().await?)
     .await?;
 # let _ = bridge;
 # Ok(())

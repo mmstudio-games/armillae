@@ -64,7 +64,7 @@ impl LiveTarget {
     }
 
     async fn bridge(&self) -> Result<std::sync::Arc<dyn LlmBridge>, Box<dyn Error>> {
-        let resolved = self.config()?.resolve(None, None).await?;
+        let resolved = self.config()?.resolve().await?;
         Ok(RigBridgeFactory.create(resolved).await?)
     }
 }
@@ -300,7 +300,7 @@ async fn live_local_preflight_and_remote_rejection_are_classified() -> Result<()
     })
     .build()?;
     let invalid_bridge = RigBridgeFactory
-        .create(invalid_config.resolve(None, None).await?)
+        .create(invalid_config.resolve().await?)
         .await?;
     let remote = invalid_bridge
         .complete(CompletionRequest {

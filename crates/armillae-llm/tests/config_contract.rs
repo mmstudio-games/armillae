@@ -2,9 +2,9 @@ use std::{path::PathBuf, sync::Arc};
 
 use armillae_core::{CompletionRequest, CompletionResponse, GenerationOptions};
 use armillae_llm::{
-    BoxFuture, BridgeCapabilities, BridgeConfig, BridgeError, BridgeFactory, CompletionStream,
-    CredentialRef, EndpointPolicy, LlmBridge, ResolvedBridgeConfig, SecretResolver, SecretString,
-    TransportConfig,
+    BoxFuture, BridgeCapabilities, BridgeConfig, BridgeError, BridgeFactory, BridgeResolveContext,
+    CompletionStream, CredentialRef, EndpointPolicy, LlmBridge, ResolvedBridgeConfig,
+    SecretResolver, SecretString, TransportConfig,
 };
 use futures_executor::block_on;
 use secrecy::ExposeSecret;
@@ -218,6 +218,29 @@ fn endpoint_policy_can_optionally_tighten_the_default() {
         Err(BridgeError::InvalidConfiguration { message })
             if message == "endpoint host is not allowed"
     ));
+
+    let allowed_config = BridgeConfig::builder("rig", "openai", "model")
+        .endpoint(
+            Url::parse("https://gateway.example.com/v1")
+                .expect("the allowed endpoint is a valid URL"),
+        )
+        .build()
+        .expect("the endpoint passes structural validation");
+    let context = BridgeResolveContext::new().endpoint_policy(&ExampleOnly);
+    assert!(block_on(allowed_config.resolve_with(context)).is_ok());
+
+    let rejected_config = BridgeConfig::builder("rig", "openai", "model")
+        .endpoint(
+            Url::parse("https://other.example/v1").expect("the rejected endpoint is a valid URL"),
+        )
+        .build()
+        .expect("the endpoint passes structural validation");
+    let context = BridgeResolveContext::new().endpoint_policy(&ExampleOnly);
+    assert!(matches!(
+        block_on(rejected_config.resolve_with(context)),
+        Err(BridgeError::InvalidConfiguration { message })
+            if message == "endpoint host is not allowed"
+    ));
 }
 
 #[test]
@@ -246,7 +269,8 @@ fn resolver_credentials_use_an_object_safe_async_contract() {
         .build()
         .expect("the resolver reference is valid");
 
-    let resolved = block_on(config.resolve(Some(resolver.as_ref()), None))
+    let context = BridgeResolveContext::new().secret_resolver(resolver.as_ref());
+    let resolved = block_on(config.resolve_with(context))
         .expect("the host resolver returns the configured Secret");
     assert_eq!(
         resolved
@@ -257,7 +281,7 @@ fn resolver_credentials_use_an_object_safe_async_contract() {
     );
 
     assert!(matches!(
-        block_on(config.resolve(None, None)),
+        block_on(config.resolve()),
         Err(BridgeError::InvalidConfiguration { .. })
     ));
 }
@@ -282,7 +306,10 @@ fn empty_resolved_credentials_are_rejected() {
         .build()
         .expect("the resolver reference itself is valid");
     assert!(matches!(
-        block_on(resolver_config.resolve(Some(&EmptyResolver), None)),
+        block_on(
+            resolver_config
+                .resolve_with(BridgeResolveContext::new().secret_resolver(&EmptyResolver),)
+        ),
         Err(BridgeError::InvalidConfiguration { .. })
     ));
 
@@ -293,7 +320,7 @@ fn empty_resolved_credentials_are_rejected() {
         .build()
         .expect("the File credential reference itself is valid");
     assert!(matches!(
-        block_on(file_config.resolve(None, None)),
+        block_on(file_config.resolve()),
         Err(BridgeError::InvalidConfiguration { .. })
     ));
     std::fs::remove_file(path).expect("the temporary Secret file can be removed");
@@ -309,8 +336,8 @@ fn file_credentials_remove_exactly_one_line_ending() {
         .build()
         .expect("the File credential reference is valid");
 
-    let resolved = block_on(config.resolve(None, None))
-        .expect("the temporary File credential can be resolved");
+    let resolved =
+        block_on(config.resolve()).expect("the temporary File credential can be resolved");
     assert_eq!(
         resolved
             .credential()
@@ -321,8 +348,7 @@ fn file_credentials_remove_exactly_one_line_ending() {
 
     std::fs::write(&path, "file-secret\n\n")
         .expect("the test can replace its temporary Secret file");
-    let resolved =
-        block_on(config.resolve(None, None)).expect("the updated File credential can be resolved");
+    let resolved = block_on(config.resolve()).expect("the updated File credential can be resolved");
     assert_eq!(
         resolved
             .credential()
@@ -343,7 +369,7 @@ fn environment_credentials_are_resolved_during_construction() {
         .build()
         .expect("PATH is a valid Environment credential reference");
 
-    let resolved = block_on(config.resolve(None, None))
+    let resolved = block_on(config.resolve())
         .expect("the test process has a non-empty PATH environment variable");
     assert!(
         !resolved
@@ -378,8 +404,9 @@ fn config_and_resolved_debug_output_omit_sensitive_values() {
         .provider_options(json!({"token": "option-secret-marker"}))
         .build()
         .expect("the common configuration is valid");
-    let resolved = block_on(config.resolve(Some(&StaticResolver), None))
-        .expect("the test resolver returns a Secret");
+    let resolved =
+        block_on(config.resolve_with(BridgeResolveContext::new().secret_resolver(&StaticResolver)))
+            .expect("the test resolver returns a Secret");
 
     let config_debug = format!("{config:?}");
     assert!(!config_debug.contains("endpoint-secret-marker"));
@@ -449,8 +476,8 @@ fn bridge_factory_is_object_safe() {
     let config = BridgeConfig::builder("contract", "mock", "model")
         .build()
         .expect("the factory test configuration is valid");
-    let resolved = block_on(config.resolve(None, None))
-        .expect("a configuration without credentials resolves locally");
+    let resolved =
+        block_on(config.resolve()).expect("a configuration without credentials resolves locally");
 
     assert_eq!(factory.driver(), "contract");
     assert!(block_on(factory.create(resolved)).is_ok());

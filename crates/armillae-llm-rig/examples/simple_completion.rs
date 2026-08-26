@@ -9,7 +9,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             name: "OPENAI_API_KEY".to_owned(),
         })
         .build()?;
-    let resolved = config.resolve(None, None).await?;
+    let resolved = config.resolve().await?;
     let bridge = RigBridgeFactory.create(resolved).await?;
 
     let response = bridge

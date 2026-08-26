@@ -87,14 +87,18 @@ impl BridgeConfig {
         Ok(())
     }
 
-    /// Resolves the credential without binding the public API to an async runtime.
-    pub fn resolve<'a>(
+    /// Resolves built-in credential references using the default host context.
+    pub fn resolve(&self) -> BoxFuture<'_, Result<ResolvedBridgeConfig, BridgeError>> {
+        self.resolve_with(BridgeResolveContext::new())
+    }
+
+    /// Resolves the credential with optional host services and policies.
+    pub fn resolve_with<'a>(
         &'a self,
-        secret_resolver: Option<&'a dyn SecretResolver>,
-        endpoint_policy: Option<&'a dyn EndpointPolicy>,
+        context: BridgeResolveContext<'a>,
     ) -> BoxFuture<'a, Result<ResolvedBridgeConfig, BridgeError>> {
         Box::pin(async move {
-            self.validate(endpoint_policy)?;
+            self.validate(context.endpoint_policy)?;
 
             let credential = match &self.credential {
                 None => None,
@@ -114,10 +118,11 @@ impl BridgeConfig {
                     Some(to_non_empty_secret(remove_one_line_ending(value), "File")?)
                 }
                 Some(CredentialRef::Resolver { key }) => {
-                    let resolver =
-                        secret_resolver.ok_or_else(|| BridgeError::InvalidConfiguration {
+                    let resolver = context.secret_resolver.ok_or_else(|| {
+                        BridgeError::InvalidConfiguration {
                             message: "Resolver credential requires a SecretResolver".to_owned(),
-                        })?;
+                        }
+                    })?;
                     let secret = resolver.resolve(key).await?;
                     if secret_is_empty(&secret) {
                         return invalid_configuration(
@@ -217,6 +222,35 @@ pub trait SecretResolver: Send + Sync {
 /// An optional host restriction applied after structural endpoint validation.
 pub trait EndpointPolicy: Send + Sync {
     fn validate(&self, endpoint: &Url) -> Result<(), BridgeError>;
+}
+
+/// Optional host-owned services and policies used while resolving a Bridge configuration.
+#[derive(Clone, Copy, Default)]
+pub struct BridgeResolveContext<'a> {
+    secret_resolver: Option<&'a dyn SecretResolver>,
+    endpoint_policy: Option<&'a dyn EndpointPolicy>,
+}
+
+impl<'a> BridgeResolveContext<'a> {
+    /// Creates a context without host-provided services or policies.
+    pub const fn new() -> Self {
+        Self {
+            secret_resolver: None,
+            endpoint_policy: None,
+        }
+    }
+
+    /// Uses a host resolver for [`CredentialRef::Resolver`] credentials.
+    pub fn secret_resolver(mut self, resolver: &'a dyn SecretResolver) -> Self {
+        self.secret_resolver = Some(resolver);
+        self
+    }
+
+    /// Applies a host restriction to an explicitly configured endpoint.
+    pub fn endpoint_policy(mut self, policy: &'a dyn EndpointPolicy) -> Self {
+        self.endpoint_policy = Some(policy);
+        self
+    }
 }
 
 /// A validated Bridge configuration paired with its non-serializable Secret.

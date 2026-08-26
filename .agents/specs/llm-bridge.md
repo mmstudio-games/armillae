@@ -846,7 +846,7 @@ TOML / JSON / Rust Builder
            │
            ▼
       BridgeConfig
-           │ SecretResolver + 默认值
+           │ 默认解析或 BridgeResolveContext
            ▼
   ResolvedBridgeConfig
            │ 校验 + Adapter Factory
@@ -864,11 +864,33 @@ pub trait SecretResolver: Send + Sync {
     ) -> BoxFuture<'a, Result<SecretString, BridgeError>>;
 }
 
+pub struct BridgeResolveContext<'a> {
+    secret_resolver: Option<&'a dyn SecretResolver>,
+    endpoint_policy: Option<&'a dyn EndpointPolicy>,
+}
+
+impl BridgeConfig {
+    pub fn resolve(
+        &self,
+    ) -> BoxFuture<'_, Result<ResolvedBridgeConfig, BridgeError>>;
+
+    pub fn resolve_with<'a>(
+        &'a self,
+        context: BridgeResolveContext<'a>,
+    ) -> BoxFuture<'a, Result<ResolvedBridgeConfig, BridgeError>>;
+}
+
 pub struct ResolvedBridgeConfig {
     config: BridgeConfig,
     credential: Option<SecretString>,
 }
 ```
+
+常规 Environment、File 或无凭证配置使用零参数 `BridgeConfig::resolve()`。只有
+`CredentialRef::Resolver` 或宿主需要限制显式 endpoint 时才构造 `BridgeResolveContext`，通过
+链式 `secret_resolver(...)`、`endpoint_policy(...)` 设置对应宿主能力，并调用
+`resolve_with(...)`。Context 字段保持私有，避免未来增加解析阶段宿主能力时破坏外部结构体字面量；
+不得为 Resolver 与 EndpointPolicy 的不同组合扩张多个专用 resolve 方法。
 
 Environment 和 File 由 `armillae-llm` 在构造阶段解析，Resolver variant 委托宿主提供的
 `SecretResolver`。File Secret 必须是 UTF-8；只移除文件末尾的一个 `\n` 或 `\r\n`，不得使用
