@@ -48,14 +48,14 @@ crate；用户本轮只授权文档工作，已勾选项只表示规范设计完
 - [ ] 保持第一阶段无自有 `unsafe`、无动态 Component ABI；若实现需要改变必须先更新 Spec。
 - [ ] 通过全部共享 Backend 合约和 Bevy 专项测试。
 
-## P3：集成与用户文档
+## P3：集成
 
 - [ ] 提供纯行动驱动、单 Clock、同类型多 Clock 和混合推进示例。
 - [ ] 提供应用自行把 Simulation 写入句柄注入 `ToolContext` 的示例，不增加 crate 互相依赖。
-- [ ] 在 `docs/` 编写安装、核心概念、Native Module、Clock 和 Bevy-native 使用指南。
 - [ ] 在实际端到端场景通过前保持 README 的“尚未实现”陈述。
 
 ## 后续范围
 
 Hosted Loader、热重载、持久化和 Agent Runtime 需要各自的已接受设计或 Active Spec，不得从本
-清单推导实现。
+清单推导实现。安装、核心概念、Native Module、Clock 和 Bevy-native 用户指南仅在公共接口
+冻结且稳定版推进获得明确授权后进入 `docs/`，不属于当前 Simulate 实施清单。

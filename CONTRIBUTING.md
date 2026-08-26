@@ -11,7 +11,9 @@ changes to an active specification or an accepted RFC. LLM Bridge work is govern
 [accepted RFC 0002](.agents/rfcs/0002-simulate.md). Agentic runtime discovery remains in
 [RFC 0001](.agents/rfcs/0001-agentic-runtime.md). [.agents/TODO.md](.agents/TODO.md) is the
 project-wide checklist index; detailed implementation differences live under `.agents/todos/`.
-User-facing installation, concepts, guides, and API documentation belong under `docs/`.
+The `docs/` directory is reserved for stable user-facing installation, concepts, guides, and API
+documentation. Do not create or maintain standalone user guides until the public interfaces are
+frozen and work on a stable release is explicitly approved.
 
 When a change introduces an architectural decision, public protocol change, Provider compatibility
 policy, security boundary, dependency choice, or scope change, update files in this order:

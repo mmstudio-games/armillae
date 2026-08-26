@@ -29,8 +29,7 @@ before a formal full-support claim. The native Anthropic Messages adapter uses a
 profile: requests require `max_output_tokens`, `ToolResult.is_error = true` is rejected because Rig
 0.41 cannot preserve it, and raw unknown Anthropic SSE events filtered by Rig are not exposed.
 Ollama uses a conservative native profile and generates Armillae ToolCall IDs because its wire
-protocol does not provide them. See the [LLM Bridge guide](docs/llm-bridge.md) for configuration,
-capabilities, examples, security boundaries, and the ignored Live support gate.
+protocol does not provide them.
 
 ## Crates
 

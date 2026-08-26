@@ -25,8 +25,7 @@ OpenAI 协议基线在正式宣称全量支持前，仍需通过明确的 Provid
 Anthropic 原生 Messages Adapter 使用保守能力配置：请求必须提供 `max_output_tokens`；Rig 0.41
 无法保留 `ToolResult.is_error = true`，因此 Adapter 会显式拒绝；Rig 已过滤的 Anthropic 原始
 未知 SSE 事件不会暴露。Ollama 使用保守的原生能力配置；由于其线协议没有调用 ID，Adapter 会
-生成 Armillae ToolCall ID，并在后续 ToolResult 请求中映射回工具名。配置、能力矩阵、示例、安全
-边界和默认 ignored 的 Live 支持门禁见 [LLM Bridge 使用指南](docs/llm-bridge.md)。
+生成 Armillae ToolCall ID，并在后续 ToolResult 请求中映射回工具名。
 
 ## Crate
 

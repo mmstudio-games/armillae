@@ -12,7 +12,10 @@
 - [x] 添加英文/中文 README、贡献指南和完整 `AGPL-3.0-only` 许可证正文。
 - [x] 将 `.agents/DESIGN.md` 调整为生态入口，并将已生效规范与待决 RFC 分离。
 - [x] 将 `.agents/TODO.md` 调整为索引，按子系统拆分实施清单。
-- [x] 将 Agent 工程文档迁入 `.agents/`，为 `docs/` 保留面向使用者的文档职责。
+- [x] 将 Agent 工程文档迁入 `.agents/`，为 `docs/` 保留稳定版用户文档职责；公共接口冻结并
+      明确授权推进稳定版前不创建或维护独立用户指南。
+- [x] 移除 alpha 阶段提前创建的 `docs/llm-bridge.md` 及 README 引用，协议事实继续由 Active
+      Spec、RFC、Harness 和实现示例承载。
 - [x] 同步设计索引、Spec、RFC、实施清单、README、贡献指南和当前实现的链接与范围。
 
 ## Crate 发布准备
@@ -27,3 +30,5 @@
 - [ ] 分别通过四个 crate 的 `cargo publish --dry-run`，且不执行实际发布或版本提升。
       当前 `armillae-core` 已通过；其余 crate 已完成无元数据警告的打包阶段，完整验证等待
       `armillae-core 0.1.0` 按授权发布到 registry 后依赖拓扑重跑。
+- [ ] 公共接口冻结且稳定版推进获得明确授权后，再为稳定契约编写 `docs/` 用户指南；alpha 与
+      beta 阶段不以不稳定接口维护独立用户文档。
