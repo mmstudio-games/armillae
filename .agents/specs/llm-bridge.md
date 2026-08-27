@@ -2,7 +2,8 @@
 
 > 状态：Active Spec；直接 Bridge canonical 投影离线实现已完成；fallback Router 待实现
 > 规范基线：2026-08-27
-> 适用范围：`armillae-core`、`armillae-llm`、`armillae-tools`、`armillae-llm-rig`
+> 适用范围：`armillae-core`、`armillae-llm`、`armillae-tools`、`armillae-tools-macros`、
+> `armillae-llm-rig`
 > 设计入口：[Armillae 设计索引](../DESIGN.md)
 > 路由决策：[RFC 0003：LLM canonical 投影与模型 fallback](../rfcs/0003-llm-projection-fallback.md)
 > 后续方向：[RFC 0001：Agentic 叙事运行时](../rfcs/0001-agentic-runtime.md)
@@ -238,6 +239,10 @@ armillae/
 │   │       ├── context.rs
 │   │       └── error.rs
 │   │
+│   ├── armillae-tools-macros/
+│   │   └── src/
+│   │       └── lib.rs
+│   │
 │   └── armillae-llm-rig/
 │       └── src/
 │           ├── lib.rs
@@ -281,7 +286,7 @@ crates/armillae-rag/              # 组合检索、重排、上下文组装与 L
                    armillae-core
                     ▲         ▲
                     │         │
-              armillae-llm  armillae-tools
+              armillae-llm  armillae-tools ◄── armillae-tools-macros
                     ▲
                     │
              armillae-llm-rig
@@ -291,6 +296,8 @@ crates/armillae-rag/              # 组合检索、重排、上下文组装与 L
 
 - `armillae-core` 不依赖异步运行时、HTTP Client 或 LLM SDK。
 - `armillae-llm` 与 `armillae-tools` 不互相依赖。
+- `armillae-tools-macros` 只依赖 `armillae-tools` 的公共契约；`armillae-tools` 不反向依赖或
+  re-export 宏 crate，避免 proc-macro 与运行时 crate 形成依赖环。
 - 第一阶段只有 `armillae-llm-rig` 依赖 `rig-core`。
 - Provider 专用类型不能出现在其他 crate 的公共 API 中。
 
@@ -303,6 +310,7 @@ crates/armillae-rag/              # 组合检索、重排、上下文组装与 L
 | `armillae-core` | `serde`、`serde_json`、`schemars`、`thiserror` |
 | `armillae-llm` | `armillae-core`、`futures-core`/`futures-util`、`serde`、`serde_json`、`toml`、`url`、`secrecy` |
 | `armillae-tools` | `armillae-core`、`futures-util`、`schemars`、`serde`、`serde_json`、`thiserror` |
+| `armillae-tools-macros` | `armillae-tools`、`syn`、`quote`、`proc-macro2` |
 | `armillae-llm-rig` | `armillae-core`、`armillae-llm`、`rig-core`、`futures-util`、`tokio` |
 
 公共 Bridge 和 Tool 接口只暴露标准 `Future`/`Stream` 语义，不把 Tokio 类型放入协议层。首个 rig Adapter 可以使用 Tokio 作为执行环境。rig 依赖以 Spike 验证过的精确版本锁定；本设计调研基线为 `rig-core = 0.41.0`。
@@ -314,17 +322,17 @@ Workspace 初始化阶段只添加上述 crate 之间的本地 path 依赖。外
 ### 5.3 版本与发布
 
 Workspace 使用 Semifold 管理 changeset、crate 版本和发布流程，配置保存在
-`.changes/config.toml`。初始化工具基线为 Semifold 0.3.0。四个 crate 分别在自己的 manifest
+`.changes/config.toml`。初始化工具基线为 Semifold 0.3.0。每个 crate 分别在自己的 manifest
 中声明精确 package version，不从 `[workspace.package]` 继承版本；Semifold 按 package 独立
 计算和写入版本，并同步更新依赖方 manifest 中的内部 crate 版本要求。共享的 edition、license、
 repository、homepage 和 readme 等非版本元数据继续从 workspace 继承。
 
 第一阶段的发布约定为：
 
-- 使用 Rust workspace resolver 发现四个 crate；
-- 四个 crate 独立锁定和演进 package version；根 manifest 不定义统一 workspace version，
+- 使用 Rust workspace resolver 发现所有 crate；
+- 各 crate 独立锁定和演进 package version；根 manifest 不定义统一 workspace version，
   不因任一 crate 发布而无条件提升其它 crate；
-- 项目源代码和四个 crate 统一采用 SPDX 标识 `AGPL-3.0-only`，仓库根目录保存完整
+- 项目源代码和所有 crate 统一采用 SPDX 标识 `AGPL-3.0-only`，仓库根目录保存完整
   `LICENSE` 正文；不得将其表述为“AGPL-3.0-or-later”；
 - 仓库根目录提供英文 `README.md`、中文 `README.zh.md` 和 `CONTRIBUTING.md`。发布到
   registry 的 crate 必须提供准确的 description、license、repository、homepage、
@@ -337,7 +345,7 @@ repository、homepage 和 readme 等非版本元数据继续从 workspace 继承
   不构成实际发布授权；
 - base branch 为 `main`，release branch 为独立的 `release`；两者不得相同，避免 Semifold 将
   版本提交直接强推到 base branch，或尝试创建源分支与目标分支相同的 release PR；
-- 四个 crate 以 `0.1.0-alpha.0` 建立集成基线并继续使用 Semifold `alpha` 通道；离线实现完成、
+- 基础 crate 以 `0.1.0-alpha.0` 建立集成基线并继续使用 Semifold `alpha` 通道；离线实现完成、
   TODO 勾选或单个 Live 用例通过均不构成晋级依据；
 - 使用 Semifold 默认 changelog 标签；
 - GitHub Actions 使用手工渲染自 Semifold 0.3.0 内置 Jinja 模板的
@@ -351,9 +359,9 @@ repository、homepage 和 readme 等非版本元数据继续从 workspace 继承
   发生破坏性调整；所有当前版本与 changeset 计划必须保留 prerelease 后缀。
 - **Beta**：必须先冻结 0.1 范围，并明确 Router 是完成还是移出该范围；不存在已知会阻断普通
   多轮、Tool continuation、Streaming、取消或既定 fallback 的重大缺陷；全部共享合约、Mock
-  HTTP、安全审计和四个 crate 的 publish dry-run 通过；代表性 Provider Live 矩阵留下脱敏证据，
+  HTTP、安全审计和所有 crate 的 publish dry-run 通过；代表性 Provider Live 矩阵留下脱敏证据，
   且至少一个真实下游集成完成稳定性验证。满足门槛后仍需用户明确授权，使用 Semifold CLI 将
-  四个 crate 一致切换到 `beta`，不得手动改 manifest 版本。
+  所有基础 crate 一致切换到 `beta`，不得手动改 manifest 版本。
 - **Stable**：至少经过一个 beta 稳定周期，已发布迁移说明和兼容性策略，且没有计划中的 0.1
   公共协议破坏性变更；稳定发布继续需要单独授权。不得从当前 alpha 直接进入 stable。
 
@@ -1323,6 +1331,67 @@ Executor 返回宿主错误还是构造 `ToolResult { is_error: true }` 不应�
 - `ToolExecutionError` 表示执行 API 失败。
 - 是否将该错误转成模型可见的 ToolResult，由下游或未来 Turn 策略决定。
 
+### 8.7 函数式 Tool 宏
+
+`armillae-tools-macros` 提供 `#[tool]` attribute macro，把普通函数转换为可注册的
+`armillae_tools::Tool` 实现；注册后由既有 `ToolExecutor` 将模型返回的 `ToolCall` 转发给该函数。
+宏只是 authoring sugar：它不得直接构造或执行 `ToolCall`，不得持有
+Registry、Bridge 或运行时状态，也不得改变 8.1 至 8.6 节的执行、错误与输出语义。
+
+最小形式为：
+
+```rust
+use armillae_tools_macros::tool;
+
+/// Add two integers.
+#[tool]
+async fn add(
+    #[tool(description = "First operand.")]
+    left: i64,
+    /// Second operand.
+    right: i64,
+) -> Result<i64, AddError> {
+    Ok(left + right)
+}
+```
+
+宏为上述函数生成：
+
+- 保留原函数；
+- 与函数同可见性的零大小 Unit Struct，名称为函数名的 PascalCase（示例为 `Add`）；
+- 与 Struct 同名空间的 `Tool` 实例值，可直接传给 `ToolRegistry::register`；
+- 隐藏文档的参数结构体，派生 `Deserialize` 与 `JsonSchema`，可见性与函数一致以满足公共
+  `Tool` implementation，其字段也保持相同可见性和函数参数顺序；
+- `Tool` 实现，其 `Args` 为生成的参数结构、`Output`/`Error` 来自
+  `Result<Output, Error>`，并把调用委托给原函数。
+
+宏支持同步和异步自由函数，并遵循以下契约：
+
+- 函数必须显式返回 `Result<Output, Error>`，不得含 receiver、泛型、`unsafe`、`extern`、
+  variadic 参数或返回位置 `impl Trait`；参数必须使用简单 identifier pattern。
+- `Output` 与 `Error` 继续由 `Tool` trait 约束；宏不得把 typed error 提前擦除成字符串。
+- 一个可选的 `ToolContext` 参数通过 `#[tool(context)]` 显式标记；它必须是 owned
+  `ToolContext`，不会进入模型参数 Schema。其余参数都必须满足生成参数结构的
+  `DeserializeOwned + JsonSchema + Send` 约束。
+- Tool 名默认使用函数标识符；`name = "..."` 可显式覆盖。名称必须为 1 至 64 个字符，
+  首字符是 ASCII 字母或下划线，其余字符只能是 ASCII 字母、数字、下划线或连字符。
+- Tool description 按函数上的 `description = "..."`、函数 doc comment、
+  `Function to <name>` 的顺序取得。参数描述既可以集中写在函数的
+  `params(field = "...")` 中，也可以就地写为参数的
+  `#[tool(description = "...")]`；两种显式写法语义等价，由用户按习惯选择，同一参数不得同时
+  使用两者。没有显式配置时依次使用参数 doc comment 和 `Parameter <field>`。
+- 非 `Option<T>` 参数默认 required，`Option<T>` 参数默认 optional；不提供额外 required
+  覆盖，避免 JSON Schema 与 serde 反序列化语义分叉。
+- 函数位置的 `name`、`description`、`params(...)` 与参数位置的 `description`、`context`
+  之外的配置必须产生编译错误；重复项、未知参数名、同一参数的两种显式描述和多个 Context
+  也必须在编译期拒绝，不得静默忽略。
+- 生成代码使用 `::armillae_tools` 的绝对路径。第一阶段要求下游以该标准 crate 名依赖
+  `armillae-tools`；依赖 rename 支持留待出现真实需求后设计。
+
+`armillae-tools-macros` 独立发布并依赖 `armillae-tools`；运行时 crate 不反向依赖或 re-export
+proc-macro crate。这样使用宏的下游显式依赖两者，手写 `Tool` 的下游不携带 proc-macro 依赖，
+同时避免两个 crate 形成依赖环。
+
 ## 9. `armillae-llm-rig`：rig LLM Adapter
 
 ### 9.1 使用范围
@@ -1672,6 +1741,8 @@ let final_response = bridge
 - 重复注册；
 - ToolContext 扩展透传；
 - call ID 保持不变。
+- `#[tool]` 为同步/异步函数生成与手写 `Tool` 等价的 Definition、Schema、typed call 和
+  `ToolContext` 透传；非法签名和非法 attribute 配置通过编译失败测试覆盖。
 
 ### 11.3 Bridge 合约测试
 
@@ -1836,6 +1907,8 @@ Bridge 一次只执行一个 Model Call 的边界。完整测试证据和限制�
 - 实现 `Tool`、`DynTool` 和 blanket implementation。
 - 实现 `ToolContext`、`ToolExecutor` 和 `ToolRegistry`。
 - 完成参数、Schema、执行和错误合约测试。
+- 由独立 `armillae-tools-macros` 提供 `#[tool]`，将同步或异步自由函数转换为既有 `Tool`
+  契约，并完成运行时与编译期合约测试。
 
 ### P3：`armillae-llm` 与 Mock
 

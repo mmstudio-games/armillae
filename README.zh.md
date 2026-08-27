@@ -8,7 +8,7 @@ Armillae 是一个面向 Agentic 叙事系统、TRPG 运行时和大世界模拟
 
 ## 当前状态
 
-Armillae 目前处于 alpha 阶段，四个基础 crate 继续使用 Semifold `alpha` 发布通道，以便公共协议
+Armillae 目前处于 alpha 阶段，基础 crate 继续使用 Semifold `alpha` 发布通道，以便公共协议
 边界、Provider 兼容性和发布证据继续收敛。只有冻结 0.1 范围、清零已知重大链路缺陷、获得代表性
 Live 与真实下游证据并经明确授权后才进入 beta；不会从 alpha 直接晋级 stable。已经实现的 LLM
 基础设施提供：
@@ -16,6 +16,7 @@ Live 与真实下游证据并经明确授权后才进入 beta；不会从 alpha 
 - Provider 无关的消息、Completion、Tool、Usage 与 Streaming 协议；
 - 一次只执行一个 Model Call、且不依赖具体异步运行时的 `LlmBridge`；
 - 类型安全的 Tool 定义、注册与单次 ToolCall 执行；
+- 将同步或异步函数转换为同一 Tool 契约的 `#[tool]` 宏；
 - 确定性的 Mock 与共享 Bridge 合约测试；
 - OpenAI、通用 OpenAI-compatible、DeepSeek、MiniMax、Moonshot、Anthropic 和 Ollama 的 Rig
   Adapter；
@@ -34,6 +35,7 @@ Anthropic 原生 Messages Adapter 使用保守能力配置：请求必须提供 
 | `armillae-core` | Provider 无关的消息、Completion、Tool、Usage 与流式事件 |
 | `armillae-llm` | Bridge trait、能力、配置、Secret、错误、Factory 与 Mock |
 | `armillae-tools` | 类型安全 Tool、Context、Registry 与单次执行 |
+| `armillae-tools-macros` | 面向 `armillae-tools` 的函数式 `#[tool]` 声明宏 |
 | `armillae-llm-rig` | 与公共协议隔离的 Rig Provider Adapter |
 
 核心边界很简单：Bridge 只完成一次模型调用，Tool Executor 只执行一次 ToolCall；是否继续调用

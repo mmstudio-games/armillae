@@ -15,3 +15,9 @@ pub use executor::ToolExecutor;
 pub use output::{IntoToolOutput, ToolOutput};
 pub use registry::{ToolRegistry, ToolRegistryBuilder};
 pub use tool::Tool;
+
+#[doc(hidden)]
+pub mod __private {
+    pub use schemars;
+    pub use serde;
+}

@@ -1,0 +1,5 @@
+error: `name` may only contain ASCII letters, digits, underscores, or hyphens
+ --> tests/ui/invalid_name.rs:3:15
+  |
+3 | #[tool(name = "not valid")]
+  |               ^^^^^^^^^^^

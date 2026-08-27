@@ -1,0 +1,5 @@
+error: tool functions cannot be generic
+ --> tests/ui/generic.rs:4:11
+  |
+4 | fn generic<T>(value: T) -> Result<T, std::convert::Infallible> {
+  |           ^^^

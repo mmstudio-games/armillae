@@ -1,0 +1,5 @@
+error: duplicate `description` argument
+ --> tests/ui/duplicate_description.rs:3:31
+  |
+3 | #[tool(description = "first", description = "second")]
+  |                               ^^^^^^^^^^^

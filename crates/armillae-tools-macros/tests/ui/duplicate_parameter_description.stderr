@@ -1,0 +1,5 @@
+error: tool parameter `value` has descriptions in both `params(...)` and `#[tool(description = ...)]`
+ --> tests/ui/duplicate_parameter_description.rs:3:15
+  |
+3 | #[tool(params(value = "Function-level description"))]
+  |               ^^^^^

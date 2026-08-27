@@ -1,0 +1,5 @@
+error: a `#[tool(context)]` parameter must have type `ToolContext`
+ --> tests/ui/invalid_context.rs:5:31
+  |
+5 |     #[tool(context)] context: String,
+  |                               ^^^^^^

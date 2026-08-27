@@ -22,7 +22,7 @@ Armillae 面向 Agentic 叙事、TRPG 运行时和大世界游戏引擎提供分
 继续拥有 canonical LLM 协议，由 Adapter 对目标 Provider 做双向投影，并由独立 LLM Router
 在显式策略下提供模型 fallback。所有已支持 Adapter 的直接 Bridge projection 已完成离线实现
 与 Mock HTTP 合约；Router 和授权 Live 场景矩阵仍待完成，因此仍不宣称“全量兼容所有模型”。
-真实 Provider 验证继续暴露此前离线门禁未覆盖的重大设计与链路问题，四个基础 crate 因此保持
+真实 Provider 验证继续暴露此前离线门禁未覆盖的重大设计与链路问题，基础 crate 因此保持
 `alpha` 发布通道。进入 `beta` 的依据是 0.1 范围和公共协议基本冻结、重大链路缺陷清零并获得
 代表性 Live 与真实下游证据，而不是“离线实现完成”；稳定版必须经过至少一个 beta 稳定周期，
 不得从当前 alpha 直接晋级。
@@ -44,6 +44,7 @@ Agentic 叙事运行时                 Discovery
   │     └── LlmBridge              一次 Provider Model Call；canonical 协议投影
 ├── 可选：直接使用 LlmBridge      Provider projection 离线合约已完成
   ├── 可选：ToolExecutor           单次执行边界已实现
+  │     └── armillae-tools-macros  函数式 Tool 声明宏；仅生成现有 Tool 契约
   └── 副作用治理
 ```
 
@@ -80,7 +81,7 @@ attempt，但不执行 Tool、不维护 Conversation Memory，也不改变 canon
    Router 只复用 Adapter projection，不成为单 Provider 正常工作的前置条件。
 3. 重新执行 DeepSeek 多轮与 Tool continuation Live 验证，再完成默认 ignored 的 OpenAI 协议
    Live 场景门禁。没有真实凭证时只交付可复现门禁，不伪造 Live 通过证据。
-4. 四个基础 crate 保持 alpha；冻结 0.1 范围（包括 Router 是否纳入）、清零已知重大链路问题、
+4. 所有基础 crate 保持 alpha；冻结 0.1 范围（包括 Router 是否纳入）、清零已知重大链路问题、
    完成安全/发布审计、代表性 Live 和至少一个真实下游验证后，才单独决策是否进入 beta。
    稳定版必须在 beta 中证明兼容性承诺可执行，不能仅凭离线测试或功能清单完成度晋级。
 5. 按已冻结的 Simulate 公共契约完成 Bevy P0 Spike，再实现共享后端合约测试；在 Spike 编译

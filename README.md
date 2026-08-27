@@ -8,7 +8,7 @@ type-safe Tool execution; its next design focus is the Agentic narrative runtime
 
 ## Status
 
-Armillae is alpha software. Its four foundational crates remain on Semifold's `alpha` release
+Armillae is alpha software. Its foundational crates remain on Semifold's `alpha` release
 channel while public protocol boundaries, Provider compatibility, and release evidence continue to
 stabilize. Beta requires a frozen 0.1 scope, no known chain-blocking defects, representative Live
 and downstream evidence, and explicit approval; stable will not be promoted directly from alpha.
@@ -19,6 +19,7 @@ The implemented LLM foundation currently provides:
 - target Provider projection with same-Provider reasoning replay and observable cross-Provider
   compatibility facts;
 - type-safe Tool authoring, registration, and exactly one ToolCall execution;
+- a `#[tool]` macro that turns synchronous or asynchronous functions into the same Tool contract;
 - deterministic mocks and shared Bridge contract tests;
 - Rig adapters for OpenAI, generic OpenAI-compatible endpoints, DeepSeek, MiniMax, Moonshot,
   Anthropic, and Ollama;
@@ -38,6 +39,7 @@ protocol does not provide them.
 | `armillae-core` | Provider-independent messages, completions, Tools, usage, and streaming events |
 | `armillae-llm` | Bridge traits, capabilities, configuration, secrets, errors, factories, and mocks |
 | `armillae-tools` | Type-safe Tools, context, registry, and single-call execution |
+| `armillae-tools-macros` | Function-like `#[tool]` authoring macro for `armillae-tools` |
 | `armillae-llm-rig` | Rig-backed Provider adapters isolated from the public protocol |
 
 The central boundary is simple: a Bridge performs one model call, and a Tool Executor performs

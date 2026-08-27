@@ -55,11 +55,12 @@
 
 - [x] 初始化 Rust workspace。
 - [x] 创建 `armillae-core`、`armillae-llm`、`armillae-tools` 和
-      `armillae-llm-rig` 四个 crate。
+      `armillae-llm-rig` 四个运行时 crate，并让 `armillae-tools-macros` 仅依赖
+      `armillae-tools` 的公共契约。
 - [x] 落实 crate 依赖方向，禁止 `armillae-llm` 与 `armillae-tools` 互相依赖。
 - [x] 保证 `armillae-core` 不依赖异步运行时、HTTP Client 或 LLM SDK。
 - [x] 建立统一的格式检查、Clippy、单元测试和文档构建基线。
-- [x] 使用 Semifold 0.3.0 初始化 Rust workspace 版本管理，并让四个 crate 保持 `alpha` 通道；
+- [x] 使用 Semifold 0.3.0 初始化 Rust workspace 版本管理，并让所有基础 crate 保持 `alpha` 通道；
       beta/stable 晋级由项目发布清单的证据门槛和单独用户授权控制。
 - [x] 添加可由 Pull Request 和 Semifold CD 复用的 Rust CI，覆盖格式、check、全部离线测试、
       严格 Clippy 和文档构建。
@@ -134,6 +135,17 @@
 - [x] 覆盖未知 Tool、Tool 自身错误和输出序列化失败。
 - [x] 覆盖重复注册、稳定定义排序和注销行为。
 - [x] 覆盖 `ToolContext` extensions 透传和 ToolCall ID 保持。
+
+### 函数式 Tool 宏
+
+- [x] 创建独立 `armillae-tools-macros` proc-macro crate，不让运行时 crate 反向依赖它。
+- [x] 实现 `#[tool]`，为同步/异步自由函数生成既有 `Tool` 实现、参数 Schema 和可注册实例。
+- [x] 同时支持函数级 `params(field = "...")` 与参数级
+      `#[tool(description = "...")]` 两种参数描述写法，并拒绝同一参数重复声明。
+- [x] 支持名称/描述覆盖与显式 `#[tool(context)] ToolContext` 参数。
+- [x] 在编译期拒绝非法函数签名、非法名称、重复/未知配置和多个 Context。
+- [x] 覆盖生成的 Definition、required/optional Schema、typed error、Context 透传和实际
+      `ToolRegistry` 执行；为主要误用补充编译失败测试。
 
 ## P3：`armillae-llm` 与 Mock
 

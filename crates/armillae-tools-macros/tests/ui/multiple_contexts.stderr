@@ -1,0 +1,5 @@
+error: a tool function may have at most one `#[tool(context)]` parameter
+ --> tests/ui/multiple_contexts.rs:6:5
+  |
+6 |     #[tool(context)] second: armillae_tools::ToolContext,
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

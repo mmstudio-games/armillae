@@ -1,0 +1,5 @@
+error: a ToolContext parameter cannot have a model-facing description
+ --> tests/ui/context_description.rs:5:5
+  |
+5 |     #[tool(context, description = "Host context")] context: armillae_tools::ToolContext,
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

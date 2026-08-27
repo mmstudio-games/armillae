@@ -1,0 +1,5 @@
+error: tool functions must return Result<Output, Error>
+ --> tests/ui/non_result.rs:4:32
+  |
+4 | fn not_a_result(value: i64) -> i64 {
+  |                                ^^^

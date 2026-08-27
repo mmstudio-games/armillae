@@ -1,0 +1,28 @@
+[package]
+name = "armillae-tools-macros"
+version = "0.1.0-alpha.0"
+edition.workspace = true
+description = "Function-like Tool authoring macros for Armillae"
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/armillae-tools-macros"
+readme.workspace = true
+keywords = ["llm", "tools", "macros", "agent", "ai"]
+categories = ["development-tools"]
+
+[lib]
+proc-macro = true
+
+[dependencies]
+armillae-tools = { version = "0.1.0-alpha.1", path = "../armillae-tools" }
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "2", features = ["full"] }
+
+[dev-dependencies]
+armillae-core = { path = "../armillae-core" }
+futures-executor = "0.3"
+serde_json = "1"
+trybuild = "1"
+

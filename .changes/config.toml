@@ -52,6 +52,12 @@ resolver = "rust"
 channel = "alpha"
 channel-bump = "preserve"
 
+[packages.armillae-tools-macros]
+path = "crates/armillae-tools-macros"
+resolver = "rust"
+channel = "alpha"
+channel-bump = "preserve"
+
 [resolver.rust.pre-check]
 type = "http"
 url = "https://crates.io/api/v1/crates/{{ package.name }}/{{ package.version }}"

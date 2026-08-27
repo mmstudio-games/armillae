@@ -20,15 +20,17 @@
 
 ## Crate 发布准备
 
-- [x] 四个 crate 分别在自己的 manifest 中锁定 package version，不继承统一 workspace version。
-- [x] 为四个 crate 补齐一致且可继承的发布元数据，并确保打包后的 README 路径有效。
-- [x] 撤销未消费的 stable promotion changeset，并使用 Semifold CLI 将四个 crate 恢复为
+- [x] 各 crate 分别在自己的 manifest 中锁定 package version，不继承统一 workspace version。
+- [x] 为新建的 `armillae-tools-macros` 补齐 Semifold package 配置和与既有 crate 一致的发布
+      元数据，并通过 `cargo package` 验证；正式 publish dry-run 证据仍由下方统一发布门禁跟踪。
+- [x] 撤销未消费的 stable promotion changeset，并使用 Semifold CLI 将既有四个 crate 恢复为
       `alpha` 通道；`semifold status` 不得再把下一版本计划为无 prerelease 后缀的稳定版。
 - [ ] 冻结 0.1 范围并明确 Router 是否纳入，清零重大链路缺陷，完成共享/Mock/安全门禁、
-      代表性 Live 矩阵、四 crate publish dry-run 和至少一个真实下游验证后，再决定是否进入
+      代表性 Live 矩阵、所有 crate publish dry-run 和至少一个真实下游验证后，再决定是否进入
       `beta`；stable 必须经过至少一个 beta 稳定周期并单独授权。
-- [ ] 分别通过四个 crate 的 `cargo publish --dry-run`，且不执行实际发布或版本提升。
-      当前 `armillae-core` 已通过；其余 crate 已完成无元数据警告的打包阶段，完整验证等待
-      `armillae-core 0.1.0` 按授权发布到 registry 后依赖拓扑重跑。
+- [ ] 分别通过所有 crate 的 `cargo publish --dry-run`，且不执行实际发布或版本提升。
+      当前 `armillae-core` 已通过；其余既有 crate 已完成无元数据警告的打包阶段。新增
+      `armillae-tools-macros` 已通过 `cargo package`（含 tarball 编译验证），其正式 dry-run 与其余
+      未完成项一起等待对应上游版本按授权发布到 registry 后重跑。
 - [ ] 公共接口冻结且稳定版推进获得明确授权后，再为稳定契约编写 `docs/` 用户指南；alpha 与
       beta 阶段不以不稳定接口维护独立用户文档。
