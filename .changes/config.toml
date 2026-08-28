@@ -46,6 +46,18 @@ resolver = "rust"
 channel = "alpha"
 channel-bump = "preserve"
 
+[packages.armillae-simulate]
+path = "crates/armillae-simulate"
+resolver = "rust"
+channel = "alpha"
+channel-bump = "preserve"
+
+[packages.armillae-simulate-bevy]
+path = "crates/armillae-simulate-bevy"
+resolver = "rust"
+channel = "alpha"
+channel-bump = "preserve"
+
 [packages.armillae-tools]
 path = "crates/armillae-tools"
 resolver = "rust"

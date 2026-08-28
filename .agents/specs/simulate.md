@@ -1,8 +1,8 @@
 # Armillae Simulate 规范
 
-> 状态：Active Spec；实现尚未开始
-> 规范基线：2026-08-26
-> 适用范围：未来的 `armillae-simulate`、`armillae-simulate-bevy` 及其它 Simulation Backend
+> 状态：Active Spec；首阶段 Native 实现已完成
+> 规范基线：2026-08-28
+> 适用范围：`armillae-simulate`、`armillae-simulate-bevy` 及其它 Simulation Backend
 > 设计入口：[Armillae 设计索引](../DESIGN.md)
 > 决策来源：[RFC 0002：Simulate 与可替换 ECS 后端](../rfcs/0002-simulate.md)
 > 实施清单：[Simulate TODO](../todos/simulate.md)
@@ -14,8 +14,8 @@ Backend 隔离、Bevy 适配边界和合约测试。没有被本文明确纳入�
 本文中的“必须”“不得”和“只”属于规范要求；明确标记为“实施门禁”或“后续范围”的内容尚未
 授权对应产品实现。本文已经冻结第一阶段后端中立协议、公共 Rust 标识符、对象安全接口、
 Clock 批处理语义和 Bevy-native API 形状；实现不得以“内部细节”为由改变这些契约。Bevy
-精确依赖与最小 Features 仍须通过 P0 Spike 编译验证，若 Spike 证明签名不可实现，必须先修改
-本 Spec，再修改代码。
+精确依赖与最小 Features 已通过 P0 Spike 编译验证；未来升级若证明既有签名不可继续实现，
+必须先修改本 Spec，再修改代码。
 
 ## 1. 范围
 
@@ -500,12 +500,46 @@ pub struct TypedClockTransition<C: Clock> {
     pub after: C,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone)]
 pub struct TypedAdvanceOutcome<C: Clock> {
     pub clock_type: ClockTypeId,
     pub transitions: Vec<TypedClockTransition<C>>,
 }
+
+impl<C> std::fmt::Debug for TypedAdvanceOutcome<C>
+where
+    C: Clock + std::fmt::Debug,
+    C::Step: std::fmt::Debug,
+{
+    fn fmt(
+        &self,
+        formatter: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        formatter
+            .debug_struct("TypedAdvanceOutcome")
+            .field("clock_type", &self.clock_type)
+            .field("transitions", &self.transitions)
+            .finish()
+    }
+}
+
+impl<C> PartialEq for TypedAdvanceOutcome<C>
+where
+    C: Clock + PartialEq,
+    C::Step: PartialEq,
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.clock_type == other.clock_type
+            && self.transitions == other.transitions
+    }
+}
 ```
+
+`TypedAdvanceOutcome<C>` 的 `Debug` 与 `PartialEq` 是条件实现，不是 `Clock` 的强制能力。标准
+derive 无法为嵌套的 `TypedClockTransition<C>` 正确补出关联类型 `C::Step` 的全部约束，因此
+实现必须手动提供上述等价条件；不得仅为简化 derive 而把 `Debug` 或 `PartialEq` 加入
+`Clock` / `Clock::Step` 的必需约束。普通同时实现这些 Trait 的 Clock 保持相同调试与比较体验，
+不实现它们的 Clock 仍可使用全部 typed 执行 API。
 
 ### 7.3 Clock Instance 管理
 
@@ -829,7 +863,7 @@ pub enum SimulationBuildError {
 
     #[error("native registration failed for module `{module}`: {code}")]
     NativeRegistrationFailed {
-        module: ModuleId,
+        module: Option<ModuleId>,
         code: String,
         message: String,
     },
@@ -871,7 +905,9 @@ Module 注册分为 incoming staging 与 Builder commit：
 Backend-native `descriptor` / `register` 在 `panic = "unwind"` 下 panic 时，Builder 必须丢弃
 payload 和 staging，返回 `NativeRegistrationFailed`，code 固定为
 `armillae.simulate/native_module_panicked`、message 固定为 `native module panicked`，并保持
-已有 Builder 内容可继续使用；
+已有 Builder 内容可继续使用。`descriptor()` 尚未成功返回时 Adapter 无法取得真实 Module ID，
+此时 `module` 必须为 `None`；descriptor 已返回后的 `register()` panic 或 native binding 失败
+必须使用 `Some(descriptor.id)`。不得为 descriptor panic 伪造 sentinel Module ID；
 `panic = "abort"` 不可恢复。
 
 第一阶段只保证单个构建错误的结构化分类，不保证同时存在多个独立描述错误时返回完整列表或
@@ -1043,10 +1079,11 @@ Backend ID 不符返回 `BackendMismatch`，版本要求不匹配返回 `Incompa
 `armillae.simulate/backend_native_access`，不得包含 `hosted_modules`；`parallel_systems` 只按第
 10.7 节实际执行器条件报告。
 
-本 API 设计以官方 `bevy_ecs 0.19.1` 为候选编译基线。官方 crate 元数据声明 Rust 1.95.0，
+本 API 设计以官方 `bevy_ecs 0.19.1` 为精确编译基线。官方 crate 元数据声明 Rust 1.95.0，
 `Schedule::add_systems` 接受 `IntoScheduleConfigs<ScheduleSystem, M>`，`Schedule::run` 返回
-`()`，Resource 在 0.19 中是 singleton Component。P0 Spike 仍必须在仓库工具链上编译本文
-签名；在 Spike 完成前，“0.19.1”不是添加依赖的授权。
+`()`，Resource 在 0.19 中是 singleton Component。P0 Spike 已在 Rust 1.95.0、最小 `std`、
+additive `multi_threaded` 和 `wasm32-wasip1` 边界编译本文签名并验证执行行为，证据见
+[bevy_ecs 0.19.1 P0 Spike](../spikes/bevy-ecs-0.19.1.md)。
 
 ### 10.2 Builder 与 Native Module API
 
@@ -1914,28 +1951,34 @@ Fixture 的逻辑身份固定为：
 Native API、同类型批量 Advance、Faulted 语义，以及 Scripted Test Double/共享合约入口均已
 由本 Spec 冻结。
 
-创建产品 crate 前仍必须完成 Bevy P0 Spike：
+创建产品 crate 前要求的 Bevy P0 Spike 已于 2026-08-28 完成：
 
-1. 在 `.agents/spikes/` 提交验证记录；
-2. 用 `bevy_ecs = "=0.19.1"` 候选版本编译第 10 节全部签名；
-3. 验证 Rust 1.95.0、`default-features = false`、`std` 和 additive `parallel` feature；
-4. 验证 SystemSet ordering、`Schedule::initialize`、`Local<T>::FromWorld` 初始化时序和 final
+1. 已在 `.agents/spikes/` 提交验证记录；
+2. 已用 `bevy_ecs = "=0.19.1"` 编译第 10 节全部签名；
+3. 已验证 Rust 1.95.0、`default-features = false`、`std` 和 additive `parallel` feature；
+4. 已验证 SystemSet ordering、`Schedule::initialize`、`Local<T>::FromWorld` 初始化时序和 final
    deferred application；
-5. 验证 Module 注册/初始化与执行边界的 `catch_unwind`、`SystemExecutionResult` 显式 output
+5. 已验证 Module 注册/初始化与执行边界的 `catch_unwind`、`SystemExecutionResult` 显式 output
    pipe、redacting fallback marker 分类和 Faulted 状态；
-6. 验证 `World: Send`、`NonSend` 线程亲和性、single-thread、multi-thread 和目标 Wasm 构建
-   边界；
-7. 若事实与本文不符，先修订 Spec，不得在实现中静默偏离。
+6. 已验证 `World: Send`、`NonSend` 线程亲和性、single-thread、multi-thread 和
+   `wasm32-wasip1` 构建边界；
+7. Spike 暴露的 typed outcome derive 问题已先修订本文，未在实现中静默偏离。
 
-Spike 完成且用户明确授权实现后，必须使用 Cargo CLI 创建 crate 和添加依赖，并同步检查实施
-清单、用户文档计划和发布元数据。当前文档授权不包含产品代码或 manifest 修改。
+用户已明确授权并完成首阶段实现；产品 crate 与依赖均通过 Cargo CLI 创建或添加，发布元数据、
+alpha 通道、实施清单和用户文档边界已经同步检查。
 
 Hosted Loader、持久化和 Agent Runtime 不阻塞第一阶段 Native Simulate，但也不得在第一阶段
 实现中以临时接口提前冻结。
 
 ## 17. 实现与文档状态
 
-当前仓库尚不存在 `armillae-simulate` 或 `armillae-simulate-bevy`，也没有任何实现可以被视为
-符合本 Spec。根 README 和用户文档在首个可用实现与端到端示例通过前不得宣称该能力已经发布。
+当前仓库已经包含 alpha 通道的 `armillae-simulate` 与 `armillae-simulate-bevy`。后端中立协议、
+Scripted Test Double、共享 Backend 合约、Bevy Native Module/Clock/Execute 实现、panic/Fault
+边界和 Bevy 专项测试均已落地；action-only、单 Clock、同类型多实例、混合推进和
+`ToolContext` 应用句柄示例均已实际运行。实现不包含 Hosted Loader、持久化、Agent Harness
+或自动主循环。
+
+公共接口仍处 alpha 验证期，根 README 不把它描述为稳定发布能力；稳定版推进获得明确授权前，
+也不在 `docs/` 创建独立用户指南。
 
 本 Spec 的实施差异由 [Simulate TODO](../todos/simulate.md) 跟踪；持久化不进入该清单。

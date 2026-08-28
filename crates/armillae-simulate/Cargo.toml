@@ -1,0 +1,24 @@
+[package]
+name = "armillae-simulate"
+version = "0.1.0-alpha.0"
+edition.workspace = true
+rust-version = "1.95.0"
+description = "Backend-neutral simulation, clock, module, and execution protocols for Armillae"
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/armillae-simulate"
+readme.workspace = true
+keywords = ["simulation", "ecs", "game", "clock", "agent"]
+categories = ["game-development"]
+
+[features]
+default = []
+testing = []
+
+[dependencies]
+schemars = { version = "1", features = ["derive"] }
+semver = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"

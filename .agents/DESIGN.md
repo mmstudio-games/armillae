@@ -1,7 +1,7 @@
 # Armillae 设计索引
 
 > 状态：Active
-> 更新日期：2026-08-27
+> 更新日期：2026-08-28
 > 作用：Armillae 生态的权威工程设计入口，不在本文件重复各子系统规范或 RFC
 
 本目录服务于项目设计、实施和 Agent 协作；工程事实按成熟度分为已生效的 `specs/`、尚在决策
@@ -36,7 +36,7 @@ Armillae 面向 Agentic 叙事、TRPG 运行时和大世界游戏引擎提供分
 Agentic 叙事运行时                 Discovery
   ├── 生命周期与执行推进
   ├── Agent 行为与上下文组织
-  ├── 组合：模拟基础设施            Active Spec；未实现
+  ├── 组合：模拟基础设施            Active Spec；首阶段 Native 已实现
   │     ├── armillae-simulate       后端中立的执行、Clock 与 Module 契约
   │     └── armillae-simulate-bevy  首个 ECS 后端适配
   ├── 组合：状态与持久化            RFC 暂缓；独立于 simulate
@@ -84,8 +84,10 @@ attempt，但不执行 Tool、不维护 Conversation Memory，也不改变 canon
 4. 所有基础 crate 保持 alpha；冻结 0.1 范围（包括 Router 是否纳入）、清零已知重大链路问题、
    完成安全/发布审计、代表性 Live 和至少一个真实下游验证后，才单独决策是否进入 beta。
    稳定版必须在 beta 中证明兼容性承诺可执行，不能仅凭离线测试或功能清单完成度晋级。
-5. 按已冻结的 Simulate 公共契约完成 Bevy P0 Spike，再实现共享后端合约测试；在 Spike 编译
-   验证精确 Bevy 版本、Features 和错误边界前不创建产品 crate。
+5. Simulate 首阶段 Native 实现已经完成：后端中立协议、Scripted Test Double、共享 Backend
+   合约、Bevy 0.19.1 Adapter、typed/JSON Clock 路径、专项测试和首批集成示例均已落地；两个
+   crate 继续保持 alpha，后续只按真实下游反馈修复，不提前加入 Hosted Loader、持久化或
+   Agent Harness。
 6. 使用 Simulate 的已确认边界继续完成 Agentic 叙事运行时 RFC，不让运行时替用户决定 Agent、
    Tool 或 Simulation Driver 的调度策略。
 7. 状态与持久化继续作为独立子系统保留，但在用户重新启动该方向前不创建 RFC、Spec、crate

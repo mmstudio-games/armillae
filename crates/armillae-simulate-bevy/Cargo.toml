@@ -1,0 +1,31 @@
+[package]
+name = "armillae-simulate-bevy"
+version = "0.1.0-alpha.0"
+edition.workspace = true
+rust-version = "1.95.0"
+description = "Bevy ECS simulation backend for Armillae"
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/armillae-simulate-bevy"
+readme.workspace = true
+keywords = ["simulation", "ecs", "bevy", "game", "agent"]
+categories = ["game-development"]
+
+[features]
+default = []
+parallel = ["bevy_ecs/multi_threaded"]
+
+[dependencies]
+armillae-simulate = { version = "0.1.0-alpha.0", path = "../armillae-simulate" }
+bevy_ecs = { version = "=0.19.1", default-features = false, features = ["std"] }
+jsonschema = { version = "0.33", default-features = false }
+serde = "1"
+serde_json = "1"
+thiserror = "2"
+
+[dev-dependencies]
+armillae-simulate = { path = "../armillae-simulate", features = ["testing"] }
+armillae-tools = { path = "../armillae-tools" }
+schemars = { version = "1", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
