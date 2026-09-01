@@ -1,6 +1,6 @@
 [package]
 name = "armillae-simulate-bevy"
-version = "0.1.0-alpha.0"
+version = "0.1.0-alpha.1"
 edition.workspace = true
 rust-version = "1.95.0"
 description = "Bevy ECS simulation backend for Armillae"
@@ -17,7 +17,7 @@ default = []
 parallel = ["bevy_ecs/multi_threaded"]
 
 [dependencies]
-armillae-simulate = { version = "0.1.0-alpha.0", path = "../armillae-simulate" }
+armillae-simulate = { version = "0.1.0-alpha.1", path = "../armillae-simulate" }
 bevy_ecs = { version = "=0.19.1", default-features = false, features = ["std"] }
 jsonschema = { version = "0.33", default-features = false }
 serde = "1"
