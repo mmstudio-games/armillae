@@ -1,4 +1,4 @@
-name: Rust CI
+name: Quality
 
 on:
   pull_request:
@@ -13,27 +13,27 @@ permissions:
   contents: read
 
 jobs:
-  quality:
-    name: Format, Test, Clippy, and Docs
+  test:
+    name: Rust
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-      - name: Setup Rust
+      - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      - name: Cache Cargo
+      - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
-      - name: Check formatting
+      - name: Format
         run: cargo fmt --all -- --check
-      - name: Check workspace
+      - name: Check
         run: cargo check --workspace --all-targets --all-features --locked
-      - name: Run all offline tests
-        run: cargo test --workspace --all-targets --all-features --locked
-      - name: Run Clippy
+      - name: Clippy
         run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
-      - name: Build documentation
+      - name: Test
+        run: cargo test --workspace --all-targets --all-features --locked
+      - name: Documentation
         run: cargo doc --workspace --all-features --no-deps --locked
         env:
           RUSTDOCFLAGS: -D warnings

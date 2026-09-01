@@ -14,8 +14,8 @@ permissions:
 
 jobs:
   quality:
-    name: Rust CI
-    uses: ./.github/workflows/ci.yaml
+    name: Quality
+    uses: ./.github/workflows/quality.yaml
   build:
     name: Version or Publish
     needs: quality

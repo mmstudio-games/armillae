@@ -68,6 +68,8 @@
       branch，同时保持既有 PR status 与 version/publish workflow 不变。
 - [x] Semifold CD 必须在同一提交的 Rust CI 通过后运行，且标准 CI 不执行 ignored Live
       Provider 测试或注入 Provider 凭证。
+- [x] 参照同系仓库将 GitHub Actions 整理为 `Quality`、`Security`、`Semifold CI` 和
+      `Semifold Status`，并在保留 Semifold CD 质量前置门禁的同时增加依赖与 Secret 扫描。
 
 ### Message 与 Tool 协议
 

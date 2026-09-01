@@ -369,9 +369,10 @@ crate 发布通道只表达 SemVer 成熟度，不自动改变 `armillae.llm/v1a
 协议版本是否晋级必须由独立协议决策处理。任何发布阶段都不得在未完成真实矩阵证据时宣称
 “全量支持所有 OpenAI 协议 Provider/模型组合”。
 
-仓库同时提供一个可复用的 Rust CI workflow。Pull Request 直接调用该 workflow；`main` 的
-Semifold CD workflow 必须先复用并通过同一质量门禁，再运行 `semifold ci`，避免未验证提交进入
-版本提升或发布路径。质量门禁固定执行：
+仓库的 GitHub Actions 按职责拆分为 `Quality`、`Security`、`Semifold CI` 和
+`Semifold Status` workflow。`Quality` 是可复用的 Rust CI workflow：Pull Request 直接运行，
+`main` 的 Semifold CD workflow 必须先复用并通过同一质量门禁，再运行
+`semifold ci`，避免未验证提交进入版本提升或发布路径。质量门禁固定执行：
 
 - `cargo fmt --all -- --check`；
 - `cargo check --workspace --all-targets --all-features --locked`；
@@ -385,6 +386,10 @@ CI 使用 stable Rust，并安装 `rustfmt` 和 `clippy`；Cargo 构建缓存不
 Live Provider 测试，也不向 workflow 注入 Provider API Key。Semifold PR status workflow 只读取
 发布计划并维护 PR 状态评论；CD 仅使用 GitHub Token、OIDC 权限和仓库配置的
 `CARGO_REGISTRY_TOKEN`，不得把 token 输出到日志。
+
+`Security` 在 Pull Request、`main` push 和每周定时任务中独立运行，使用
+`cargo-deny` 检查 advisory、license、ban 和 dependency source，并对完整 Git 历史执行
+Gitleaks 扫描。Gitleaks 二进制必须固定版本并在执行前验证 SHA-256；扫描输出必须脱敏。
 
 ## 6. `armillae-core`：共享协议
 
