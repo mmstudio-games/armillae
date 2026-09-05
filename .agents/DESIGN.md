@@ -17,8 +17,11 @@ Armillae 面向 Agentic 叙事、TRPG 运行时和大世界游戏引擎提供分
 
 模拟推进、Clock、可替换 ECS 后端和 Module 边界已经由 RFC 0002 收敛，并转入
 `armillae-simulate` Active Spec；具体持久化模型及其 RFC 暂缓，不属于 `armillae-simulate` 的
-实现责任。LLM Bridge 第一阶段离线基线已经完成；真实 DeepSeek 多轮验证暴露出 ProviderData
-只有响应保留、没有请求回放的非对称边界。用户于 2026-08-27 接受 RFC 0003，要求 Armillae
+实现责任。上下文组织与压缩已接受 RFC 0004：`armillae-context` 以薄 `Context` 契约 + 范式黑盒
+实现，只依赖 `armillae-core`，当前内置 `SectionContext` 小节范式；v1 导出不含缓存断点，
+`TraditionalContext` 为后续范围。LLM Bridge 第一阶段离线基线已经完成；真实 DeepSeek 多轮
+验证暴露出 ProviderData 只有响应保留、没有请求回放的非对称边界。用户于 2026-08-27 接受
+RFC 0003，要求 Armillae
 继续拥有 canonical LLM 协议，由 Adapter 对目标 Provider 做双向投影，并由独立 LLM Router
 在显式策略下提供模型 fallback。所有已支持 Adapter 的直接 Bridge projection 已完成离线实现
 与 Mock HTTP 合约；Router 和授权 Live 场景矩阵仍待完成，因此仍不宣称“全量兼容所有模型”。
@@ -40,6 +43,8 @@ Agentic 叙事运行时                 Discovery
   │     ├── armillae-simulate       后端中立的执行、Clock 与 Module 契约
   │     └── armillae-simulate-bevy  首个 ECS 后端适配
   ├── 组合：状态与持久化            RFC 暂缓；独立于 simulate
+  ├── 组合：上下文组织与压缩        RFC 0004 Accepted；Spec Active，首阶段实现完成 + Live 验证通过
+  │     └── armillae-context       薄 Context 契约 + 范式黑盒；只依赖 core
   ├── 可选：LlmRouter              RFC 0003 Accepted；组合多个 LlmBridge
   │     └── LlmBridge              一次 Provider Model Call；canonical 协议投影
 ├── 可选：直接使用 LlmBridge      Provider projection 离线合约已完成
@@ -60,9 +65,11 @@ attempt，但不执行 Tool、不维护 Conversation Memory，也不改变 canon
 |---|---|---|
 | [LLM Bridge、Router 与 Tool Executor](specs/llm-bridge.md) | Active Spec | Canonical 消息与 Completion 协议、Bridge、Router、Tool、Provider projection、Streaming、安全与合约测试 |
 | [Simulate](specs/simulate.md) | Active Spec | 公共 API 与 JSON 协议、显式执行与推进、Clock、Module、后端契约、Bevy-native API 和验收门禁 |
+| [上下文组织与压缩](specs/context.md) | Active Spec | 薄 `Context` 契约、压缩管道三态语义、`SectionContext` 小节范式、`SectionStore` 契约与验收门禁 |
 | [RFC 0001：Agentic 叙事运行时](rfcs/0001-agentic-runtime.md) | Draft RFC | 运行时目标、分层边界、待冻结的领域模型与设计工作流 |
 | [RFC 0002：Simulate 与可替换 ECS 后端](rfcs/0002-simulate.md) | Accepted RFC | Simulate 命名、责任、推进所有权、Clock、Module 与可替换后端决策 |
 | [RFC 0003：LLM canonical 投影与模型 fallback](rfcs/0003-llm-projection-fallback.md) | Accepted RFC | Provider 双向投影、兼容性事实、候选路由与 fallback 边界 |
+| [RFC 0004：上下文组织与压缩](rfcs/0004-context.md) | Accepted RFC | 薄 Context 契约 + 范式黑盒实现、压缩执行外包、持久化归范式、窗口分区决策 |
 | [rig-core 0.41.0 Spike](spikes/rig-core-0.41.0.md) | Completed Spike | Rig 低层可行性证据、限制与锁定版本依据 |
 
 实现前必须先在本索引中找到对应的 Active Spec 或已接受 RFC，再从 [TODO 索引](TODO.md)
@@ -93,6 +100,11 @@ attempt，但不执行 Tool、不维护 Conversation Memory，也不改变 canon
 7. 状态与持久化继续作为独立子系统保留，但在用户重新启动该方向前不创建 RFC、Spec、crate
    或持久化 Schema。
 8. 冻结运行时与 LLM/Tool 等可选能力的依赖边界及端到端验收标准。
+9. armillae-context 首阶段实现完成（RFC 0004 + Active Spec 冻结后落地 P1–P4、集成示例与
+   生产级内存 Store），并已通过 DeepSeek 官方 API 的 Live 链路验证（对话 → record_section
+   划界 → 自动压缩 → prepare 零组装 → 真实推理 → apply → export）；v1 导出不含缓存断点，
+   TraditionalContext 为后续第二个内置范式。Live 验证同时发现并修复了 prepare 产物未剥离
+   record_section 痕迹导致未配对 tool_calls 的问题（Spec §7.1.0 已同步）。
 
 Anthropic 与 Ollama 继续使用精确锁定的 Rig 0.41.0 和既有 Bridge 合约，不为 Rig 已过滤的原始
 未知 SSE/NDJSON 数据引入自有传输层；Driver 未暴露的事实作为显式兼容限制记录。
