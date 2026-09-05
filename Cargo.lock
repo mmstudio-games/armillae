@@ -26,6 +26,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "armillae-context"
+version = "0.1.0-alpha.0"
+dependencies = [
+ "armillae-core",
+ "schemars",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "armillae-core"
 version = "0.1.0-alpha.1"
 dependencies = [
@@ -53,6 +64,7 @@ dependencies = [
 name = "armillae-llm-rig"
 version = "0.1.0-alpha.1"
 dependencies = [
+ "armillae-context",
  "armillae-core",
  "armillae-llm",
  "armillae-tools",

@@ -13,6 +13,7 @@
 |---|---|---|---|
 | LLM Bridge、Router 与 Tool Executor | [todos/llm-bridge.md](todos/llm-bridge.md) | Active | P7 直接 projection 离线完成；fallback Router 与 Live 回归待完成 |
 | Simulate | [todos/simulate.md](todos/simulate.md) | Complete | 首阶段 Native 核心、Bevy Adapter、合约测试与示例已完成；保持 alpha 收集真实下游反馈 |
+| 上下文组织与压缩（armillae-context） | [todos/armillae-context.md](todos/armillae-context.md) | Active | 首阶段实现完成；DeepSeek 官方 Live 验证已通过（2026-08-28） |
 | 项目与发布 | [todos/project.md](todos/project.md) | Active | 首次多 crate 发布验证 |
 | Agentic 叙事运行时 | 暂无实施清单 | Discovery | 以 [Simulate Spec](specs/simulate.md) 为下层边界，继续完成 [RFC 0001](rfcs/0001-agentic-runtime.md) |
 | 状态与持久化 | 暂无实施清单 | Paused | 不创建 RFC、Spec、Schema 或实现，等待用户重新启动该方向 |

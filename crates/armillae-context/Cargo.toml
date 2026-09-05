@@ -1,0 +1,24 @@
+[package]
+name = "armillae-context"
+version = "0.1.0-alpha.0"
+edition.workspace = true
+rust-version = "1.95.0"
+description = "Context organization and compression protocols for Armillae"
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/armillae-context"
+readme.workspace = true
+keywords = ["context", "compression", "llm", "agent", "conversation"]
+categories = ["development-tools"]
+
+[features]
+default = []
+testing = []
+
+[dependencies]
+armillae-core = { version = "0.1.0-alpha.1", path = "../armillae-core" }
+schemars = { version = "1", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"

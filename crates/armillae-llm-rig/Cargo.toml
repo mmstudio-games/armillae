@@ -21,6 +21,7 @@ serde_json = "1"
 tracing = "0.1"
 
 [dev-dependencies]
+armillae-context = { path = "../armillae-context" }
 armillae-llm = { path = "../armillae-llm", features = ["mock"] }
 armillae-tools = { path = "../armillae-tools" }
 futures = "0.3"
