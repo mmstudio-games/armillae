@@ -107,3 +107,6 @@ Anthropic 与 Ollama 继续使用精确锁定的 Rig 0.41.0 和既有 Bridge 合
 - 未冻结的运行时问题必须显式保留在 Draft RFC 中，不得通过代码、测试或实施清单偷渡为
   既定设计。
 - LLM Bridge 暂停扩展不等于废弃；运行时不得复制或绕过已经稳定的公共协议。
+
+HTTP 失败诊断由 armillae-llm 定义安全事实，armillae-llm-rig 从类型化 HTTP/IO 错误提取；
+宿主获得状态码与网络失败类型，不获得原始错误文本、URL、header 或响应正文。

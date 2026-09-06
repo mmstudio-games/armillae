@@ -16,7 +16,7 @@ pub enum BridgeContractError {
     #[error("Bridge operation failed during contract verification")]
     BridgeFailure {
         operation: &'static str,
-        error: BridgeError,
+        error: Box<BridgeError>,
     },
 
     #[error("Bridge contract event sequence is invalid")]
@@ -41,7 +41,7 @@ pub async fn verify_completion(
             .await
             .map_err(|error| BridgeContractError::BridgeFailure {
                 operation: "complete",
-                error,
+                error: Box::new(error),
             })?;
     if response != *expected {
         return Err(BridgeContractError::ResponseMismatch);
@@ -61,13 +61,13 @@ pub async fn verify_stream(
             .await
             .map_err(|error| BridgeContractError::BridgeFailure {
                 operation: "stream",
-                error,
+                error: Box::new(error),
             })?;
     let mut events = Vec::new();
     while let Some(event) = stream.next().await {
         events.push(event.map_err(|error| BridgeContractError::BridgeFailure {
             operation: "stream item",
-            error,
+            error: Box::new(error),
         })?);
     }
 

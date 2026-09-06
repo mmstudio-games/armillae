@@ -850,6 +850,8 @@ pub struct ErrorMetadata {
     pub provider: String,
     pub http_status: Option<u16>,
     pub request_id: Option<String>,
+    pub transport_kind: Option<TransportErrorKind>,
+    pub os_error: Option<i32>,
 }
 ```
 
@@ -2059,3 +2061,18 @@ Bridge 的单 Provider call 语义，也不接管 Tool continuation。rig-rs 被
 - [Rig GitHub 仓库](https://github.com/0xPlaygrounds/rig)
 
 外部依赖的版本、能力和行为以实现 Spike 及锁定版本的源码为准，不能仅依赖本文链接所指向的 latest 文档。
+
+### HTTP 失败诊断补充
+
+`ErrorMetadata` 增加可选 `transport_kind: TransportErrorKind` 与 `os_error: i32`。
+TransportErrorKind 使用固定枚举表达 timeout、connect、connection_refused、connection_reset、
+connection_aborted、not_connected、host_unreachable、network_unreachable、permission_denied、
+broken_pipe、unexpected_eof、body、decode、redirect、request、protocol、unknown。
+Adapter 必须优先保留 HTTP status：401/403/429 分别为 Authentication/PermissionDenied/RateLimited，
+408/504 为 Timeout，其余 5xx 为可重试 Transport，其余非成功 HTTP status 为 ProviderRejected。
+Reqwest 错误链中已有的 status 也不得丢失；没有 HTTP status 时从类型化 reqwest/IO 原因提取
+transport_kind 与 OS error code。不能通过原始文本猜测 DNS/TLS 原因；不可判定时明确 unknown。
+错误 Display、Debug 与观测事件不得泄漏原始错误 source、URL、凭证、header 或响应正文。
+
+Mock 合约检查的 BridgeContractError::BridgeFailure 通过 Box<BridgeError> 持有完整错误，
+保持语义不变并限制 Result 错误分支的栈大小。

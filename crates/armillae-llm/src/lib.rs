@@ -15,7 +15,7 @@ pub use config::{
     BRIDGE_CONFIG_API_VERSION, BridgeConfig, BridgeConfigBuilder, BridgeResolveContext,
     CredentialRef, EndpointPolicy, ResolvedBridgeConfig, SecretResolver, TransportConfig,
 };
-pub use error::{BridgeError, ErrorMetadata};
+pub use error::{BridgeError, ErrorMetadata, TransportErrorKind};
 pub use factory::BridgeFactory;
 #[cfg(feature = "mock")]
 pub use mock::{MockBridge, MockResponse};

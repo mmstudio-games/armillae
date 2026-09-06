@@ -1,6 +1,55 @@
 use std::time::Duration;
 
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
+
+/// Fixed diagnostic categories; never contains a raw client error or URL.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum TransportErrorKind {
+    Timeout,
+    Connect,
+    ConnectionRefused,
+    ConnectionReset,
+    ConnectionAborted,
+    NotConnected,
+    HostUnreachable,
+    NetworkUnreachable,
+    PermissionDenied,
+    BrokenPipe,
+    UnexpectedEof,
+    Body,
+    Decode,
+    Redirect,
+    Request,
+    Protocol,
+    Unknown,
+}
+
+impl TransportErrorKind {
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::Timeout => "timeout",
+            Self::Connect => "connect",
+            Self::ConnectionRefused => "connection_refused",
+            Self::ConnectionReset => "connection_reset",
+            Self::ConnectionAborted => "connection_aborted",
+            Self::NotConnected => "not_connected",
+            Self::HostUnreachable => "host_unreachable",
+            Self::NetworkUnreachable => "network_unreachable",
+            Self::PermissionDenied => "permission_denied",
+            Self::BrokenPipe => "broken_pipe",
+            Self::UnexpectedEof => "unexpected_eof",
+            Self::Body => "body",
+            Self::Decode => "decode",
+            Self::Redirect => "redirect",
+            Self::Request => "request",
+            Self::Protocol => "protocol",
+            Self::Unknown => "unknown",
+        }
+    }
+}
 
 /// Safe, normalized facts attached to a Provider failure.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -8,6 +57,8 @@ pub struct ErrorMetadata {
     pub provider: String,
     pub http_status: Option<u16>,
     pub request_id: Option<String>,
+    pub transport_kind: Option<TransportErrorKind>,
+    pub os_error: Option<i32>,
 }
 
 impl ErrorMetadata {
@@ -16,6 +67,8 @@ impl ErrorMetadata {
             provider: provider.into(),
             http_status: None,
             request_id: None,
+            transport_kind: None,
+            os_error: None,
         }
     }
 
@@ -92,4 +145,27 @@ pub enum BridgeError {
 
     #[error("stream interrupted")]
     StreamInterrupted { metadata: ErrorMetadata },
+}
+
+#[cfg(test)]
+mod diagnostic_tests {
+    use super::*;
+
+    #[test]
+    fn transport_kind_serde_uses_the_stable_diagnostic_code() {
+        for kind in [
+            TransportErrorKind::Timeout,
+            TransportErrorKind::ConnectionRefused,
+            TransportErrorKind::ConnectionReset,
+            TransportErrorKind::Protocol,
+            TransportErrorKind::Unknown,
+        ] {
+            let encoded = serde_json::to_string(&kind).expect("encode");
+            assert_eq!(encoded, format!("\"{}\"", kind.code()));
+            assert_eq!(
+                serde_json::from_str::<TransportErrorKind>(&encoded).expect("decode"),
+                kind
+            );
+        }
+    }
 }

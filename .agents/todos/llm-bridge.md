@@ -448,3 +448,5 @@
 - Bridge 与 Tool 基础设施扩展：MCP、远程或录制/回放 ToolExecutor、多模态内容、负载均衡、
   Provider/model 自动发现、全局 Factory Registry 与动态插件加载；
 - 独立模型与数据能力：`armillae-embedding`、`armillae-vector-store` 与 `armillae-rag`。
+
+- [x] 保留 HTTP status 与类型化 transport/OS 失败事实；验证真实本地 HTTP 403、429、5xx、连接失败和超时。

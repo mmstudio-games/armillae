@@ -463,8 +463,8 @@ fn shared_contract_preserves_injected_stream_failure_classification() {
         )),
         Err(BridgeContractError::BridgeFailure {
             operation: "stream item",
-            error: BridgeError::StreamInterrupted { .. },
-        })
+            error,
+        }) if matches!(*error, BridgeError::StreamInterrupted { .. })
     ));
 }
 

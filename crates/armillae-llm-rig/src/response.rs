@@ -1,7 +1,7 @@
 use armillae_core::{
     AssistantContent, CompletionResponse as ArmillaeCompletionResponse, FinishReason,
 };
-use armillae_llm::{BridgeError, ErrorMetadata};
+use armillae_llm::{BridgeError, ErrorMetadata, TransportErrorKind};
 use rig_core::{
     completion::{CompletionError, CompletionResponse as RigCompletionResponse},
     providers::openai,
@@ -141,13 +141,15 @@ fn openai_finish_reason(reason: &str) -> FinishReason {
 }
 
 fn normalize_completion_error(provider: &str, error: CompletionError) -> BridgeError {
-    let http_status = error
+    let mut facts = ErrorMetadata::new(provider);
+    facts.http_status = error
         .provider_response_status()
         .map(|status| status.as_u16());
-    let metadata = || {
-        let metadata = ErrorMetadata::new(provider);
-        http_status.map_or(metadata.clone(), |status| metadata.with_http_status(status))
-    };
+    if let CompletionError::HttpError(http_error) = &error {
+        classify_http_error(http_error, &mut facts);
+    }
+    let http_status = facts.http_status;
+    let metadata = || facts.clone();
 
     match http_status {
         Some(401) => BridgeError::Authentication {
@@ -185,6 +187,13 @@ fn normalize_completion_error(provider: &str, error: CompletionError) -> BridgeE
             CompletionError::RequestError(_) => BridgeError::InvalidRequest {
                 message: "provider request could not be constructed".to_owned(),
             },
+            CompletionError::HttpError(_)
+                if facts.transport_kind == Some(TransportErrorKind::Timeout) =>
+            {
+                BridgeError::Timeout {
+                    metadata: metadata(),
+                }
+            }
             CompletionError::HttpError(_) => BridgeError::Transport {
                 retryable: true,
                 metadata: metadata(),
@@ -201,6 +210,80 @@ fn normalize_completion_error(provider: &str, error: CompletionError) -> BridgeE
                 metadata: metadata(),
             },
         },
+    }
+}
+
+fn classify_http_error(error: &rig_core::http_client::Error, metadata: &mut ErrorMetadata) {
+    use rig_core::http_client::Error;
+    match error {
+        Error::InvalidStatusCode(status) | Error::InvalidStatusCodeWithMessage(status, _) => {
+            metadata.http_status = Some(status.as_u16());
+        }
+        Error::Instance(source) => {
+            let mut current: Option<&(dyn std::error::Error + 'static)> = Some(source.as_ref());
+            let mut kind = TransportErrorKind::Unknown;
+            let mut io_kind = None;
+            let mut timed_out = false;
+            // Bound traversal even for a custom client's cyclic error chain.
+            for _ in 0..16 {
+                let Some(error) = current else {
+                    break;
+                };
+                if let Some(error) = error.downcast_ref::<reqwest::Error>() {
+                    metadata.http_status = metadata
+                        .http_status
+                        .or(error.status().map(|status| status.as_u16()));
+                    timed_out |= error.is_timeout();
+                    kind = if error.is_connect() {
+                        TransportErrorKind::Connect
+                    } else if error.is_body() {
+                        TransportErrorKind::Body
+                    } else if error.is_decode() {
+                        TransportErrorKind::Decode
+                    } else if error.is_redirect() {
+                        TransportErrorKind::Redirect
+                    } else if error.is_request() {
+                        TransportErrorKind::Request
+                    } else {
+                        TransportErrorKind::Unknown
+                    };
+                }
+                if let Some(error) = error.downcast_ref::<std::io::Error>() {
+                    use std::io::ErrorKind;
+                    metadata.os_error = metadata.os_error.or(error.raw_os_error());
+                    timed_out |= error.kind() == ErrorKind::TimedOut;
+                    let classified = match error.kind() {
+                        ErrorKind::ConnectionRefused => Some(TransportErrorKind::ConnectionRefused),
+                        ErrorKind::ConnectionReset => Some(TransportErrorKind::ConnectionReset),
+                        ErrorKind::ConnectionAborted => Some(TransportErrorKind::ConnectionAborted),
+                        ErrorKind::NotConnected => Some(TransportErrorKind::NotConnected),
+                        ErrorKind::HostUnreachable => Some(TransportErrorKind::HostUnreachable),
+                        ErrorKind::NetworkUnreachable => {
+                            Some(TransportErrorKind::NetworkUnreachable)
+                        }
+                        ErrorKind::PermissionDenied => Some(TransportErrorKind::PermissionDenied),
+                        ErrorKind::BrokenPipe => Some(TransportErrorKind::BrokenPipe),
+                        ErrorKind::UnexpectedEof => Some(TransportErrorKind::UnexpectedEof),
+                        _ => None,
+                    };
+                    io_kind = classified.or(io_kind);
+                }
+                current = error.source();
+            }
+            let kind = if timed_out {
+                TransportErrorKind::Timeout
+            } else {
+                io_kind.unwrap_or(kind)
+            };
+            if metadata.http_status.is_none() || kind != TransportErrorKind::Unknown {
+                metadata.transport_kind = Some(kind);
+            }
+        }
+        Error::Protocol(_) | Error::InvalidHeaderValue(_) | Error::NoHeaders => {
+            metadata.transport_kind = Some(TransportErrorKind::Protocol);
+        }
+        Error::StreamEnded => metadata.transport_kind = Some(TransportErrorKind::UnexpectedEof),
+        Error::InvalidContentType(_) => metadata.transport_kind = Some(TransportErrorKind::Decode),
     }
 }
 
@@ -326,5 +409,150 @@ mod tests {
         );
         assert!(!error.to_string().contains("secret response body"));
         assert!(!format!("{error:?}").contains("secret response body"));
+    }
+}
+
+#[cfg(test)]
+mod transport_diagnostic_tests {
+    use super::*;
+    use std::{
+        io::{Read, Write},
+        net::TcpListener,
+        time::Duration,
+    };
+
+    fn assert_safe(error: &BridgeError) {
+        let text = format!("{error:?} {error}");
+        assert!(!text.contains("private-response-marker"));
+        assert!(!text.contains("private-url-marker"));
+        assert!(!text.contains("private-source-marker"));
+    }
+
+    #[tokio::test]
+    async fn reqwest_status_errors_retain_status_without_url_or_body() {
+        for status in [400, 401, 403, 408, 429, 500, 503, 504] {
+            let listener = TcpListener::bind("127.0.0.1:0").expect("listener");
+            let address = listener.local_addr().expect("address");
+            let server = std::thread::spawn(move || {
+                let (mut stream, _) = listener.accept().expect("accept");
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .expect("timeout");
+                let mut buffer = [0; 4096];
+                assert!(stream.read(&mut buffer).expect("request") > 0);
+                let body = "private-response-marker";
+                write!(stream, "HTTP/1.1 {status} Test\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).expect("response");
+            });
+            let response = reqwest::Client::builder()
+                .no_proxy()
+                .build()
+                .expect("client")
+                .get(format!("http://{address}/private-url-marker"))
+                .send()
+                .await
+                .expect("response");
+            let error = response.error_for_status().expect_err("HTTP error");
+            let error = normalize_completion_error(
+                "deepseek",
+                CompletionError::HttpError(rig_core::http_client::Error::Instance(Box::new(error))),
+            );
+            server.join().expect("server");
+            assert_safe(&error);
+            let metadata = match (&error, status) {
+                (BridgeError::Authentication { metadata }, 401)
+                | (BridgeError::PermissionDenied { metadata }, 403)
+                | (BridgeError::RateLimited { metadata, .. }, 429)
+                | (BridgeError::Timeout { metadata }, 408 | 504)
+                | (
+                    BridgeError::Transport {
+                        metadata,
+                        retryable: true,
+                    },
+                    500 | 503,
+                )
+                | (BridgeError::ProviderRejected { metadata, .. }, 400) => metadata,
+                _ => panic!("incorrect category: {error:?}"),
+            };
+            assert_eq!(metadata.http_status, Some(status));
+        }
+    }
+
+    #[tokio::test]
+    async fn refused_connection_keeps_typed_cause_without_url() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("listener");
+        let address = listener.local_addr().expect("address");
+        drop(listener);
+        let error = reqwest::Client::builder()
+            .no_proxy()
+            .build()
+            .expect("client")
+            .get(format!("http://{address}/private-url-marker"))
+            .send()
+            .await
+            .expect_err("connection refused");
+        let error = normalize_completion_error(
+            "deepseek",
+            CompletionError::HttpError(rig_core::http_client::Error::Instance(Box::new(error))),
+        );
+        assert_safe(&error);
+        let BridgeError::Transport { metadata, .. } = error else {
+            panic!("transport");
+        };
+        assert_eq!(metadata.http_status, None);
+        assert_eq!(
+            metadata.transport_kind,
+            Some(TransportErrorKind::ConnectionRefused)
+        );
+        assert!(metadata.os_error.is_some());
+    }
+
+    #[tokio::test]
+    async fn client_timeout_is_classified_without_inventing_http_status() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("listener");
+        let address = listener.local_addr().expect("address");
+        // The listener stays alive but never returns an HTTP response.
+        let error = reqwest::Client::builder()
+            .no_proxy()
+            .timeout(Duration::from_millis(50))
+            .build()
+            .expect("client")
+            .get(format!("http://{address}/private-url-marker"))
+            .send()
+            .await
+            .expect_err("timeout");
+        let error = normalize_completion_error(
+            "deepseek",
+            CompletionError::HttpError(rig_core::http_client::Error::Instance(Box::new(error))),
+        );
+        assert_safe(&error);
+        let BridgeError::Timeout { metadata } = error else {
+            panic!("timeout");
+        };
+        assert_eq!(metadata.http_status, None);
+        assert_eq!(metadata.transport_kind, Some(TransportErrorKind::Timeout));
+    }
+
+    #[test]
+    fn typed_io_error_is_safe_and_unknown_sources_are_not_guessed() {
+        for (kind, expected) in [
+            (
+                std::io::ErrorKind::ConnectionReset,
+                TransportErrorKind::ConnectionReset,
+            ),
+            (std::io::ErrorKind::Other, TransportErrorKind::Unknown),
+        ] {
+            let error = normalize_completion_error(
+                "deepseek",
+                CompletionError::HttpError(rig_core::http_client::Error::Instance(Box::new(
+                    std::io::Error::new(kind, "private-source-marker"),
+                ))),
+            );
+            assert_safe(&error);
+            let BridgeError::Transport { metadata, .. } = error else {
+                panic!("transport");
+            };
+            assert_eq!(metadata.http_status, None);
+            assert_eq!(metadata.transport_kind, Some(expected));
+        }
     }
 }
