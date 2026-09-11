@@ -1,5 +1,19 @@
 # Changelog
 
+<!-- semifold:release version=0.1.0-alpha.2 -->
+## v0.1.0-alpha.2
+
+### Bug Fixes
+
+- [`b71dc0a`](https://github.com/mmstudio-games/armillae/commit/b71dc0ab33a03275536142cd888143665ad3c383): Preserve HTTP status from typed client error chains and expose safe transport failure categories and OS error codes. Distinguish authentication, permissions, rate limits, HTTP timeouts, connection failures, and client timeouts without retaining raw error text or URLs. ([#7](https://github.com/mmstudio-games/armillae/pull/7) by @fu050409)
+
+### New Features
+
+- [`a69312e`](https://github.com/mmstudio-games/armillae/commit/a69312e5e3dacbda3c194037141e466921c01b4d): Validate structured completion results across non-streaming and streaming calls with explicit capabilities and no implicit fallback.
+
+    Compile schemas before transport with external retrieval disabled. Validate final JSON objects, reject incomplete or mismatching results with structured errors, and cover all seven Provider profiles with offline request/result matrices and separately ignored Live gates.
+<!-- semifold:release:end -->
+
 <!-- semifold:release version=0.1.0-alpha.1 -->
 ## v0.1.0-alpha.1
 

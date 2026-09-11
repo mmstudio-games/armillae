@@ -1,6 +1,6 @@
 [package]
 name = "armillae-simulate"
-version = "0.1.0-alpha.0"
+version = "0.1.0-alpha.1"
 edition.workspace = true
 rust-version = "1.95.0"
 description = "Backend-neutral simulation, clock, module, and execution protocols for Armillae"

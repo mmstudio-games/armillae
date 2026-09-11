@@ -1,5 +1,15 @@
 # Changelog
 
+<!-- semifold:release version=0.1.0-alpha.2 -->
+## v0.1.0-alpha.2
+
+### New Features
+
+- [`edecc33`](https://github.com/mmstudio-games/armillae/commit/edecc33112ee717a746884c2da871e898cc6dee6): Add explicit native strict Schema and JSON Object with client Schema validation modes to the public completion protocol.
+
+    Preserve the legacy output formats and schema/history round trips. Unknown enforcement modes are rejected instead of silently downgraded.
+<!-- semifold:release:end -->
+
 <!-- semifold:release version=0.1.0-alpha.1 -->
 ## v0.1.0-alpha.1
 
