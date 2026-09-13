@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ProtocolSchema",
+  "type": "object",
+  "properties": {
+    "state": {
+      "$ref": "#/$defs/CompressionState"
+    },
+    "target": {
+      "$ref": "#/$defs/CompressionTarget"
+    }
+  },
+  "required": [
+    "target",
+    "state"
+  ],
+  "$defs": {
+    "CompressionState": {
+      "description": "Compression pipeline state, used for error expression and the pipeline\nsemantics contract. The `Context` trait exposes no state query; the state\nmachine lives inside each paradigm (spec §5.2).",
+      "oneOf": [
+        {
+          "description": "Pipeline idle; dialogue writes and manual operations are allowed.",
+          "type": "string",
+          "const": "idle"
+        },
+        {
+          "description": "Evaluation produced a target; the context is frozen until prepare or\nabandon.",
+          "type": "string",
+          "const": "evaluated"
+        },
+        {
+          "description": "Prepared; waiting for apply or abandon.",
+          "type": "string",
+          "const": "prepared"
+        }
+      ]
+    },
+    "CompressionTarget": {
+      "description": "The evaluation and preparation stages of the compression flow share a\ncompression target. \"How to compress\" parameters are paradigm-internal and\nnever cross the public protocol (spec §5.1).",
+      "oneOf": [
+        {
+          "description": "Compress a single section of the section paradigm (current sole\nimplementation).",
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "type": {
+              "type": "string",
+              "const": "section"
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ]
+        }
+      ]
+    }
+  }
+}

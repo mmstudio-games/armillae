@@ -34,6 +34,12 @@ resolver = "rust"
 channel = "alpha"
 channel-bump = "preserve"
 
+[packages.armillae-context]
+path = "crates/armillae-context"
+resolver = "rust"
+channel = "alpha"
+channel-bump = "preserve"
+
 [packages.armillae-llm]
 path = "crates/armillae-llm"
 resolver = "rust"
