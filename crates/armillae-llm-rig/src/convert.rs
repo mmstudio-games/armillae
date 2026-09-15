@@ -92,6 +92,8 @@ pub(crate) fn merge_generation_options(
             request.stop
         },
         seed: request.seed.or(defaults.seed),
+        thinking: request.thinking.or(defaults.thinking),
+        reasoning_effort: request.reasoning_effort.or(defaults.reasoning_effort),
     }
 }
 
@@ -724,12 +726,14 @@ mod tests {
                 max_output_tokens: Some(100),
                 stop: vec!["default".to_owned()],
                 seed: Some(1),
+                ..Default::default()
             },
             GenerationOptions {
                 temperature: Some(0.8),
                 max_output_tokens: None,
                 stop: vec!["request".to_owned()],
                 seed: None,
+                ..Default::default()
             },
         );
 

@@ -480,6 +480,28 @@
             "null"
           ],
           "format": "double"
+        },
+        "reasoning_effort": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReasoningEffort"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Provider-specific effort, never silently approximated by the Adapter."
+        },
+        "thinking": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Thinking"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "None inherits the Bridge default; ProviderDefault explicitly clears it."
         }
       },
       "required": [
@@ -840,6 +862,96 @@
           "const": "json_object_validated",
           "description": "The Provider generates JSON; the Bridge validates the result locally.",
           "type": "string"
+        }
+      ]
+    },
+    "ReasoningEffort": {
+      "description": "Named effort levels; each Provider accepts only its documented subset.",
+      "enum": [
+        "provider_default",
+        "none",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "type": "string"
+    },
+    "Thinking": {
+      "description": "Explicit thinking mode. Budgets and adaptive thinking are distinct contracts.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "provider_default",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "enabled",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "disabled",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "adaptive",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "tokens": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "budget",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "tokens"
+          ],
+          "type": "object"
         }
       ]
     }

@@ -53,6 +53,7 @@ impl OutputFormatCapabilities {
 /// Provider and model capabilities used for local request preflight.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct BridgeCapabilities {
+    pub reasoning: ReasoningCapabilities,
     pub streaming: bool,
     pub tool_calling: bool,
     pub parallel_tool_calls: bool,
@@ -65,6 +66,7 @@ pub struct BridgeCapabilities {
 impl BridgeCapabilities {
     pub const fn all() -> Self {
         Self {
+            reasoning: ReasoningCapabilities::ALL,
             streaming: true,
             tool_calling: true,
             parallel_tool_calls: true,
@@ -95,6 +97,7 @@ impl BridgeCapabilities {
 
     pub fn validate_request(&self, request: &CompletionRequest) -> Result<(), BridgeError> {
         self.validate()?;
+        self.reasoning.validate(&request.generation)?;
 
         let history_uses_tools = request.messages.iter().any(|message| {
             message.role == Role::Tool
@@ -208,4 +211,61 @@ fn unsupported<T>(capability: &str) -> Result<T, BridgeError> {
     Err(BridgeError::UnsupportedCapability {
         capability: capability.to_owned(),
     })
+}
+
+/// Adapter-supported modes and effort levels; model-specific combinations may be narrower.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ReasoningCapabilities {
+    pub enabled: bool,
+    pub disabled: bool,
+    pub adaptive: bool,
+    pub budget: bool,
+    pub efforts: &'static [armillae_core::ReasoningEffort],
+}
+
+impl ReasoningCapabilities {
+    pub const NONE: Self = Self {
+        enabled: false,
+        disabled: false,
+        adaptive: false,
+        budget: false,
+        efforts: &[],
+    };
+    pub const ALL: Self = Self {
+        enabled: true,
+        disabled: true,
+        adaptive: true,
+        budget: true,
+        efforts: &[
+            armillae_core::ReasoningEffort::None,
+            armillae_core::ReasoningEffort::Minimal,
+            armillae_core::ReasoningEffort::Low,
+            armillae_core::ReasoningEffort::Medium,
+            armillae_core::ReasoningEffort::High,
+            armillae_core::ReasoningEffort::XHigh,
+            armillae_core::ReasoningEffort::Max,
+        ],
+    };
+
+    pub fn validate(&self, options: &armillae_core::GenerationOptions) -> Result<(), BridgeError> {
+        use armillae_core::{ReasoningEffort, Thinking};
+        let supported = match options.thinking {
+            None | Some(Thinking::ProviderDefault) => true,
+            Some(Thinking::Enabled) => self.enabled,
+            Some(Thinking::Disabled) => self.disabled,
+            Some(Thinking::Adaptive) => self.adaptive,
+            Some(Thinking::Budget { .. }) => self.budget,
+            Some(_) => false,
+        };
+        if !supported {
+            return unsupported("generation.thinking");
+        }
+        if let Some(effort) = options.reasoning_effort
+            && effort != ReasoningEffort::ProviderDefault
+            && !self.efforts.contains(&effort)
+        {
+            return unsupported("generation.reasoning_effort");
+        }
+        Ok(())
+    }
 }

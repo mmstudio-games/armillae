@@ -370,6 +370,8 @@ struct ConfigGenerationOptions {
     max_output_tokens: Option<u64>,
     stop: Vec<String>,
     seed: Option<u64>,
+    thinking: Option<armillae_core::Thinking>,
+    reasoning_effort: Option<armillae_core::ReasoningEffort>,
 }
 
 impl Default for ConfigGenerationOptions {
@@ -380,6 +382,8 @@ impl Default for ConfigGenerationOptions {
             max_output_tokens: defaults.max_output_tokens,
             stop: defaults.stop,
             seed: defaults.seed,
+            thinking: defaults.thinking,
+            reasoning_effort: defaults.reasoning_effort,
         }
     }
 }
@@ -394,6 +398,8 @@ where
         max_output_tokens: options.max_output_tokens,
         stop: options.stop,
         seed: options.seed,
+        thinking: options.thinking,
+        reasoning_effort: options.reasoning_effort,
     })
 }
 

@@ -79,8 +79,9 @@ where
     Ok(Arc::new(bridge))
 }
 
-const fn capabilities() -> BridgeCapabilities {
+fn capabilities() -> BridgeCapabilities {
     BridgeCapabilities {
+        reasoning: crate::reasoning::capabilities("ollama", ""),
         streaming: true,
         tool_calling: true,
         parallel_tool_calls: true,
@@ -344,6 +345,7 @@ mod tests {
                     max_output_tokens: Some(64),
                     stop: vec!["END".to_owned()],
                     seed: Some(7),
+                    ..Default::default()
                 },
                 ..CompletionRequest::default()
             };

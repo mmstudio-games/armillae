@@ -41,15 +41,47 @@ where
         request_mapper: Arc<dyn RigRequestMapper>,
         normalizer: Arc<dyn RigResponseNormalizer<M::Response>>,
     ) -> Result<Self, BridgeError> {
+        let model_name = model_name.into();
+        let mut capabilities = capabilities;
+        capabilities.reasoning = crate::reasoning::capabilities(normalizer.provider(), &model_name);
         capabilities.validate()?;
+        crate::reasoning::parameters(normalizer.provider(), &model_name, &defaults, None).map_err(
+            |error| BridgeError::InvalidConfiguration {
+                message: error.to_string(),
+            },
+        )?;
         Ok(Self {
             model,
-            model_name: model_name.into(),
+            model_name,
             capabilities,
             defaults,
             request_mapper,
             normalizer,
         })
+    }
+    fn prepare(
+        &self,
+        mut request: CompletionRequest,
+        streaming: bool,
+    ) -> Result<crate::request::RigRequestProjection, BridgeError> {
+        request.generation =
+            crate::convert::merge_generation_options(&self.defaults, request.generation);
+        if streaming {
+            self.capabilities.validate_streaming_request(&request)?;
+        } else {
+            self.capabilities.validate_request(&request)?;
+        }
+        let controls = crate::reasoning::parameters(
+            self.normalizer.provider(),
+            &self.model_name,
+            &request.generation,
+            request.tool_choice.as_ref(),
+        )?;
+        let mut projection = self
+            .request_mapper
+            .map_request(request, &GenerationOptions::default())?;
+        crate::reasoning::apply(&mut projection.request, controls)?;
+        Ok(projection)
     }
 }
 
@@ -63,10 +95,8 @@ where
     }
 
     fn project(&self, request: &CompletionRequest) -> Result<ProjectionReport, BridgeError> {
-        self.capabilities.validate_request(request)?;
         OutputValidation::prepare(request.output_format.as_ref())?;
-        self.request_mapper
-            .map_request(request.clone(), &self.defaults)
+        self.prepare(request.clone(), false)
             .map(|projection| projection.report)
     }
 
@@ -82,9 +112,8 @@ where
                 request.tools.len(),
             );
             let result = async {
-                self.capabilities.validate_request(&request)?;
                 let validation = OutputValidation::prepare(request.output_format.as_ref())?;
-                let projection = self.request_mapper.map_request(request, &self.defaults)?;
+                let projection = self.prepare(request, false)?;
                 observability::record_projection(&projection.report);
                 let request = projection.request;
                 let response = self
@@ -114,9 +143,8 @@ where
                 request.tools.len(),
             );
             let result = async {
-                self.capabilities.validate_streaming_request(&request)?;
                 let validation = OutputValidation::prepare(request.output_format.as_ref())?;
-                let projection = self.request_mapper.map_request(request, &self.defaults)?;
+                let projection = self.prepare(request, true)?;
                 observability::record_projection(&projection.report);
                 let request = projection.request;
                 let response = self
@@ -239,6 +267,7 @@ mod tests {
 
     fn capabilities() -> BridgeCapabilities {
         BridgeCapabilities {
+            reasoning: armillae_llm::ReasoningCapabilities::NONE,
             streaming: true,
             tool_calling: true,
             parallel_tool_calls: true,

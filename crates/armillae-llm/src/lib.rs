@@ -11,7 +11,9 @@ mod projection;
 mod structured;
 
 pub use bridge::{BoxFuture, CompletionStream, LlmBridge};
-pub use capability::{BridgeCapabilities, OutputFormatCapabilities, ToolChoiceCapabilities};
+pub use capability::{
+    BridgeCapabilities, OutputFormatCapabilities, ReasoningCapabilities, ToolChoiceCapabilities,
+};
 pub use config::{
     BRIDGE_CONFIG_API_VERSION, BridgeConfig, BridgeConfigBuilder, BridgeResolveContext,
     CredentialRef, EndpointPolicy, ResolvedBridgeConfig, SecretResolver, TransportConfig,

@@ -77,7 +77,7 @@ fn public_protocol_types_round_trip() {
     };
     let mut extension_values = BTreeMap::new();
     extension_values.insert(
-        "openai.reasoning_effort".to_owned(),
+        "example.feature".to_owned(),
         Value::String("medium".to_owned()),
     );
     let request = CompletionRequest {
@@ -104,6 +104,7 @@ fn public_protocol_types_round_trip() {
             max_output_tokens: Some(256),
             stop: vec!["END".to_owned()],
             seed: Some(7),
+            ..Default::default()
         },
         extensions: ProviderExtensions {
             values: extension_values,
@@ -258,7 +259,16 @@ struct ProtocolSchema {
 fn protocol_schema_is_valid_json_and_matches_snapshot() {
     let schema = schemars::schema_for!(ProtocolSchema);
     let actual = serde_json::to_value(schema).expect("generated schema must be valid JSON");
-    let expected: Value = serde_json::from_str(include_str!("snapshots/protocol-schema.json"))
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/snapshots/protocol-schema.json");
+    if std::env::var_os("ARMILLAE_UPDATE_SCHEMA").is_some() {
+        std::fs::write(
+            &path,
+            format!("{}\n", serde_json::to_string_pretty(&actual).unwrap()),
+        )
+        .unwrap();
+    }
+    let expected: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap())
         .expect("checked-in protocol schema snapshot must be valid JSON");
     assert_eq!(actual, expected);
 }
@@ -336,4 +346,41 @@ fn missing_and_null_finish_reason_are_distinct_from_unknown_values() {
         serde_json::to_value(unknown).expect("response must serialize")["finish_reason"],
         "future_reason"
     );
+}
+
+#[test]
+fn thinking_and_effort_round_trip_with_explicit_default_and_strict_modes() {
+    use armillae_core::{ReasoningEffort, Thinking};
+    assert_eq!(
+        serde_json::to_value(ReasoningEffort::XHigh).unwrap(),
+        json!("xhigh")
+    );
+    for thinking in [
+        Thinking::ProviderDefault,
+        Thinking::Enabled,
+        Thinking::Disabled,
+        Thinking::Adaptive,
+        Thinking::Budget { tokens: 2048 },
+    ] {
+        for effort in [
+            ReasoningEffort::ProviderDefault,
+            ReasoningEffort::None,
+            ReasoningEffort::Minimal,
+            ReasoningEffort::Low,
+            ReasoningEffort::Medium,
+            ReasoningEffort::High,
+            ReasoningEffort::XHigh,
+            ReasoningEffort::Max,
+        ] {
+            round_trip(&GenerationOptions {
+                thinking: Some(thinking),
+                reasoning_effort: Some(effort),
+                ..Default::default()
+            });
+        }
+    }
+    assert!(serde_json::from_value::<Thinking>(json!({"type":"budget","tokens":-1})).is_err());
+    assert!(serde_json::from_value::<Thinking>(json!({"type":"disabled","tokens":1024})).is_err());
+    assert!(serde_json::from_value::<Thinking>(json!({"type":"unknown"})).is_err());
+    assert!(serde_json::from_value::<ReasoningEffort>(json!("unknown")).is_err());
 }

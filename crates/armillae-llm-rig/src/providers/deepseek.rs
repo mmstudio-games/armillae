@@ -62,8 +62,9 @@ where
     Ok(Arc::new(bridge))
 }
 
-const fn capabilities() -> BridgeCapabilities {
+fn capabilities() -> BridgeCapabilities {
     BridgeCapabilities {
+        reasoning: crate::reasoning::capabilities("deepseek", ""),
         streaming: true,
         tool_calling: true,
         parallel_tool_calls: true,

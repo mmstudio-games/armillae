@@ -32,7 +32,6 @@ max_redirects = 3
 temperature = 0.7
 max_output_tokens = 2048
 
-[provider_options]
 reasoning_effort = "medium"
 "#;
     let endpoint = Url::parse("https://api.example.com/v1")
@@ -52,8 +51,9 @@ reasoning_effort = "medium"
             max_output_tokens: Some(2_048),
             stop: Vec::new(),
             seed: None,
+            thinking: None,
+            reasoning_effort: Some(armillae_core::ReasoningEffort::Medium),
         })
-        .provider_options(json!({"reasoning_effort": "medium"}))
         .build()
         .expect("the builder configuration satisfies the common contract");
 
@@ -536,5 +536,45 @@ fn redirect_config_is_backward_readable_and_rejects_invalid_counts() {
     assert_eq!(TransportConfig::default().max_redirects, 0);
     for value in [json!(-1), json!(1.5), json!("3"), Value::Null] {
         assert!(serde_json::from_value::<TransportConfig>(json!({"max_redirects":value})).is_err());
+    }
+}
+
+#[test]
+fn explicit_thinking_modes_parse_in_config() {
+    use armillae_core::{ReasoningEffort, Thinking};
+    let example = r#"
+api_version = "armillae.llm/v1alpha1"
+provider = "deepseek"
+model = "deepseek-v4-pro"
+[defaults]
+thinking = { type = "enabled" }
+reasoning_effort = "high"
+"#;
+    let config = BridgeConfig::from_toml(example).unwrap();
+    assert_eq!(config.defaults.thinking, Some(Thinking::Enabled));
+    assert_eq!(
+        config.defaults.reasoning_effort,
+        Some(ReasoningEffort::High)
+    );
+    for mode in ["provider_default", "disabled", "adaptive"] {
+        let config = BridgeConfig::from_toml(&format!(
+            r#"
+api_version = "armillae.llm/v1alpha1"
+provider = "anthropic"
+model = "test-model"
+[defaults]
+thinking = {{ type = "{mode}" }}
+reasoning_effort = "provider_default"
+"#
+        ))
+        .unwrap();
+        assert_eq!(
+            config.defaults.reasoning_effort,
+            Some(ReasoningEffort::ProviderDefault)
+        );
+        assert_eq!(
+            serde_json::to_value(config.defaults.thinking).unwrap()["type"],
+            mode
+        );
     }
 }

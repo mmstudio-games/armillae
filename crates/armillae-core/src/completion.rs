@@ -57,6 +57,60 @@ pub struct GenerationOptions {
     pub max_output_tokens: Option<u64>,
     pub stop: Vec<String>,
     pub seed: Option<u64>,
+    /// None inherits the Bridge default; ProviderDefault explicitly clears it.
+    pub thinking: Option<Thinking>,
+    /// Provider-specific effort, never silently approximated by the Adapter.
+    pub reasoning_effort: Option<ReasoningEffort>,
+}
+
+/// Explicit thinking mode. Budgets and adaptive thinking are distinct contracts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+#[non_exhaustive]
+pub enum Thinking {
+    ProviderDefault,
+    Enabled,
+    Disabled,
+    Adaptive,
+    Budget { tokens: u64 },
+}
+
+// Serde unit variants otherwise discard fields even with deny_unknown_fields.
+impl<'de> Deserialize<'de> for Thinking {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+        enum Wire {
+            ProviderDefault {},
+            Enabled {},
+            Disabled {},
+            Adaptive {},
+            Budget { tokens: u64 },
+        }
+        Ok(match Wire::deserialize(deserializer)? {
+            Wire::ProviderDefault {} => Self::ProviderDefault,
+            Wire::Enabled {} => Self::Enabled,
+            Wire::Disabled {} => Self::Disabled,
+            Wire::Adaptive {} => Self::Adaptive,
+            Wire::Budget { tokens } => Self::Budget { tokens },
+        })
+    }
+}
+
+/// Named effort levels; each Provider accepts only its documented subset.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum ReasoningEffort {
+    ProviderDefault,
+    None,
+    Minimal,
+    Low,
+    Medium,
+    High,
+    #[serde(rename = "xhigh")]
+    XHigh,
+    Max,
 }
 
 /// Namespaced request values understood by a specific Adapter.

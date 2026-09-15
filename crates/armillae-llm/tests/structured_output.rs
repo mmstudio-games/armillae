@@ -248,6 +248,7 @@ fn dropping_structured_stream_drops_transport_without_polling_or_drain() {
 fn wire_support_does_not_imply_either_validation_mode() {
     use armillae_llm::{BridgeCapabilities, OutputFormatCapabilities};
     let mut capabilities = BridgeCapabilities {
+        reasoning: armillae_llm::ReasoningCapabilities::NONE,
         streaming: true,
         output_format: OutputFormatCapabilities {
             json_object: true,

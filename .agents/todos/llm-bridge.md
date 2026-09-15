@@ -1,5 +1,17 @@
 # LLM Bridge、Router 与 Tool Executor 实施清单
 
+## 显式思考控制（Spec 6.3.1）
+
+- [x] 公共类型、配置与 Schema，移除旧 OpenAI 扩展入口。
+- [x] 七入口模式/档位能力、默认合并和组合校验，三条调用路径一致。
+- [x] Mock HTTP 请求体、Schema 共存、拒绝无发送和回放回归。
+- [x] fmt、Clippy、相关测试、示例及 changeset 同步。
+- [ ] 授权 Live 思考控制验证（默认 ignored）。
+
+2026-09-15：core/llm/llm-rig 全 feature 测试 170 项通过、40 项 Live ignored；
+相关三 crate 全 target Clippy（-D warnings）、workspace fmt 与 diff whitespace 检查通过。
+新增七入口 reasoning Live gate，未调用真实 Provider。Rig 保持精确版本 0.42.0。
+
 > 状态：Active；P7 直接 canonical projection 离线完成，fallback Router 与 Live 回归待实现
 > 技术事实来源：[LLM Bridge、Router 与 Tool Executor Spec](../specs/llm-bridge.md)
 > 设计入口：[Armillae 设计索引](../DESIGN.md)

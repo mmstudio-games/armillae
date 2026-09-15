@@ -1,0 +1,15 @@
+# Explicit defaults. Per-call GenerationOptions override each field independently.
+# To remove a default on one call, use Thinking::ProviderDefault and/or
+# ReasoningEffort::ProviderDefault. Disabling thinking also requires clearing effort.
+api_version = "armillae.llm/v1alpha1"
+provider = "deepseek"
+model = "deepseek-v4-pro"
+
+[credential]
+type = "environment"
+name = "DEEPSEEK_API_KEY"
+
+[defaults]
+max_output_tokens = 4096
+thinking = { type = "enabled" }
+reasoning_effort = "high"

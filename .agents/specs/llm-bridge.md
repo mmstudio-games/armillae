@@ -532,6 +532,8 @@ pub struct GenerationOptions {
     pub max_output_tokens: Option<u64>,
     pub stop: Vec<String>,
     pub seed: Option<u64>,
+    pub thinking: Option<Thinking>,
+    pub reasoning_effort: Option<ReasoningEffort>,
 }
 ```
 
@@ -544,7 +546,58 @@ pub struct ProviderExtensions {
 }
 ```
 
-扩展键以 Provider 或 Adapter 命名空间隔离，例如 `openai.reasoning_effort`。Adapter 只读取自己的命名空间；未知扩展默认报错，是否允许忽略必须由显式兼容选项控制。
+扩展键以 Provider 或 Adapter 命名空间隔离，例如 `provider.feature`。Adapter 只读取自己的命名空间；未知扩展默认报错。thinking/effort 仅走公共生成字段。
+
+### 6.3.1 显式 Thinking 与 Reasoning Effort
+
+2026-09-15 用户确认统一控制入口并授权实施；alpha 不保留旧配置/API 兼容层。
+两字段同时用于 GenerationOptions 和 BridgeConfig.defaults。None 继承构造默认值；
+显式 ProviderDefault 撤销该字段的默认值，wire 省略控制。两字段独立覆盖，不隐式清除彼此。
+
+Thinking 使用 tagged JSON（type）：provider_default、enabled、disabled、adaptive、
+budget { tokens: u64 }。手动预算与 adaptive 不互换，不从 effort 推算预算。
+ReasoningEffort 使用 snake_case：provider_default、none、minimal、low、medium、high、
+xhigh、max。档位不是跨模型等价算力承诺。旧 provider_options.reasoning_effort 与所有
+命名空间 thinking/effort 入口拒绝，不提供兼容别名。
+
+| Provider | Thinking | Effort |
+| --- | --- | --- |
+| openai / openai-compatible | disabled -> reasoning_effort=none；enabled 必须同时给非 none effort，不代选强度 | none/minimal/low/medium/high/xhigh/max |
+| deepseek | enabled/disabled -> thinking.type | low/high/max，拒绝服务端会改写的别名 |
+| moonshot | K2.5/K2.6 enabled/disabled；K2.7-code 仅 enabled；K3 不接收 thinking | K3 low/high/max，其他型号不声明 |
+| minimax | M3 enabled/adaptive -> adaptive；disabled -> disabled；其他型号不声明 | 不声明，当前官方 Chat 接口无契约 |
+| anthropic | disabled/adaptive 原样；budget -> enabled + budget_tokens；enabled 无预算拒绝 | low/medium/high/xhigh/max -> output_config.effort |
+| ollama | enabled/disabled -> think 布尔值 | low/medium/high/max -> think 档位；GPT-OSS 仅 low/medium/high，无布尔开关 |
+
+BridgeCapabilities 增加模式位和 effort 集合，描述 Adapter 已知投影能力，不保证任意
+endpoint/未知模型接受。已知静默忽略或改写必须本地拒绝；其他模型约束可能由 Provider
+返回结构化错误，不自动改参数、换模型或重试。
+
+先合并默认值，再校验能力与组合，project/complete/stream 共用路径。构造阶段验证默认
+控制，无效默认值返回 InvalidConfiguration；请求冲突返回 InvalidRequest；无法承载的
+模式/档位返回 UnsupportedCapability。disabled 与非 none effort 冲突（Anthropic effort
+也控制可见输出，允许独立使用）；启用思考与 none 冲突。DeepSeek 显式启用或 effort 请求
+不接受 temperature。Anthropic 显式启用仅允许未设置或 temperature=1，禁止 required/
+specific ToolChoice，手动预算至少 1024 且小于有效 max_output_tokens。Ollama effort 不得
+覆盖 disabled。既有 DeepSeek/Moonshot 强制 ToolChoice 拒绝范围保持，不顺带放宽。
+
+Anthropic Schema 与 effort 必须合并到单个 output_config，同时保留 format 与 effort，
+避免 Rig flatten 重复键；沿用 Schema 校验与原生 Driver，不新增 HTTP 传输层。
+响应、Usage、流式状态机及 reasoning 回放协议不变。
+
+验收覆盖 Serde/Schema、默认覆盖/恢复、构造验证、旧入口拒绝、七入口 complete/stream
+Mock HTTP 请求体、Schema+effort 共存、拒绝无发送及既有回放。Live 默认 ignored。
+
+官方依据（2026-09-15 核对）：
+
+- https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create
+- https://api-docs.deepseek.com/guides/thinking_mode/
+- https://platform.kimi.ai/docs/guide/use-thinking-models
+- https://platform.kimi.ai/docs/guide/use-reasoning-effort
+- https://platform.minimax.io/docs/api-reference/text-openai-api
+- https://platform.claude.com/docs/en/build-with-claude/extended-thinking
+- https://platform.claude.com/docs/en/build-with-claude/effort
+- https://docs.ollama.com/capabilities/thinking
 
 ### 6.4 Completion Response
 
@@ -666,6 +719,7 @@ pub trait LlmBridge: Send + Sync {
 ```rust
 #[derive(Clone, Debug)]
 pub struct BridgeCapabilities {
+    pub reasoning: ReasoningCapabilities,
     pub streaming: bool,
     pub tool_calling: bool,
     pub parallel_tool_calls: bool,
@@ -673,6 +727,15 @@ pub struct BridgeCapabilities {
     pub output_format: OutputFormatCapabilities,
     pub system_message: bool,
     pub developer_message: bool,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct ReasoningCapabilities {
+    pub enabled: bool,
+    pub disabled: bool,
+    pub adaptive: bool,
+    pub budget: bool,
+    pub efforts: &'static [ReasoningEffort],
 }
 
 #[derive(Clone, Debug)]
@@ -1032,7 +1095,6 @@ max_redirects = 0
 temperature = 0.7
 max_output_tokens = 2048
 
-[provider_options]
 reasoning_effort = "medium"
 ```
 
@@ -1623,7 +1685,7 @@ ToolChoice 和 OutputFormat 等已经进入公共协议的字段仍通过 OpenAI
 | `minimax` | `auto`、`none`、`required`、`specific` | JSON Object、JSON Schema | Tool Calling、并行 ToolCall、System；不支持 Developer |
 | `moonshot` | `auto`、`none` | JSON Object | Tool Calling、并行 ToolCall、System；不支持 Developer |
 
-DeepSeek 在未显式关闭 thinking 时会抑制强制 ToolChoice；本阶段未开放该 Provider 参数，因而
+DeepSeek 在未显式关闭 thinking 时会抑制强制 ToolChoice；本次保留保守 ToolChoice 范围，仍
 必须在本地拒绝 `required` 和 `specific`。Moonshot 的 rig 路径会把 `required` 改写为
 `auto` 并注入提示消息、对 `specific` 返回 Provider 错误；Armillae 不接受这种语义降级，
 必须在能力预检阶段拒绝两者。DeepSeek 和 Moonshot 的 rig profile 都不支持 JSON Schema
@@ -1648,7 +1710,7 @@ Anthropic 使用 rig 原生 Messages Client，默认 endpoint 为 `https://api.a
 路径为 `/v1/messages`，credential 通过 `x-api-key` 发送，并由 rig 添加固定
 `anthropic-version` header。显式 endpoint 继续经过通用 URL 与宿主 EndpointPolicy 校验。
 本阶段不开放 Anthropic `provider_options` 或请求扩展；任何非空配置或扩展都必须在发送前
-拒绝，避免把 prompt caching、beta header、thinking 或其它高级能力隐式带入公共契约。
+拒绝，避免把 prompt caching、beta header 等能力隐式带入公共契约；thinking/effort 走 6.3.1。
 
 Anthropic 使用固定且保守的能力预设：支持 Streaming、Tool Calling、并行 ToolCall、全部既有
 ToolChoice、JSON Schema 和 System role；不支持 Developer role 与 JSON Object。System 只允许
@@ -1681,7 +1743,7 @@ Rig 0.42 会暴露 Anthropic 未知语义事件，Adapter 转为 ProviderEvent�
 Ollama 使用 rig 原生 `/api/chat` Client，默认 endpoint 为 `http://localhost:11434`，允许经过
 通用校验和宿主 `EndpointPolicy` 的显式 HTTP/HTTPS endpoint。Ollama 默认不要求 credential；
 当配置 credential 时按 rig 契约发送 Bearer token，以支持反向代理或受保护部署。本阶段不开放
-Ollama `provider_options` 或请求扩展，避免将 `think`、`keep_alive` 和任意模型参数绕过公共协议
+Ollama `provider_options` 或请求扩展；thinking/effort 走 6.3.1，避免将 `keep_alive` 和任意模型参数绕过公共协议
 带入 wire。公共 temperature 与 max output tokens 分别由 rig 映射为 `options.temperature` 和
 `options.num_predict`；stop 与 seed 显式映射为 `options.stop` 和 `options.seed`。
 

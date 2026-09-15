@@ -448,13 +448,11 @@ pub(crate) struct OpenAiRequestMapper {
     target_provider: &'static str,
     namespace: &'static str,
     provider_label: &'static str,
-    allow_reasoning_effort: bool,
-    provider_options: Map<String, Value>,
 }
 
 impl OpenAiRequestMapper {
     pub(crate) fn new(provider_options: Value) -> Result<Self, BridgeError> {
-        Self::build("openai", "openai", "OpenAI", true, provider_options)
+        Self::build("openai", "openai", "OpenAI", provider_options)
     }
 
     pub(crate) fn for_openai_compatible(provider_options: Value) -> Result<Self, BridgeError> {
@@ -462,7 +460,6 @@ impl OpenAiRequestMapper {
             "openai-compatible",
             "openai",
             "OpenAI-compatible",
-            true,
             provider_options,
         )
     }
@@ -472,20 +469,13 @@ impl OpenAiRequestMapper {
         provider_label: &'static str,
         provider_options: Value,
     ) -> Result<Self, BridgeError> {
-        Self::build(
-            namespace,
-            namespace,
-            provider_label,
-            false,
-            provider_options,
-        )
+        Self::build(namespace, namespace, provider_label, provider_options)
     }
 
     fn build(
         target_provider: &'static str,
         namespace: &'static str,
         provider_label: &'static str,
-        allow_reasoning_effort: bool,
         provider_options: Value,
     ) -> Result<Self, BridgeError> {
         let Value::Object(provider_options) = provider_options else {
@@ -493,13 +483,11 @@ impl OpenAiRequestMapper {
                 "{provider_label} provider_options must be a JSON object"
             ));
         };
-        validate_provider_options(&provider_options, provider_label, allow_reasoning_effort)?;
+        validate_provider_options(&provider_options, provider_label)?;
         Ok(Self {
             target_provider,
             namespace,
             provider_label,
-            allow_reasoning_effort,
-            provider_options,
         })
     }
 }
@@ -510,8 +498,6 @@ impl Default for OpenAiRequestMapper {
             target_provider: "openai",
             namespace: "openai",
             provider_label: "OpenAI",
-            allow_reasoning_effort: true,
-            provider_options: Map::new(),
         }
     }
 }
@@ -524,14 +510,8 @@ impl RigRequestMapper for OpenAiRequestMapper {
     ) -> Result<RigRequestProjection, BridgeError> {
         let parts = convert::request_parts(request, defaults, self.target_provider)?;
         let report = parts.projection_report;
-        let mut additional_params = self.provider_options.clone();
-        merge_request_extensions(
-            &mut additional_params,
-            parts.extensions.values,
-            self.namespace,
-            self.provider_label,
-            self.allow_reasoning_effort,
-        )?;
+        let mut additional_params = Map::new();
+        validate_request_extensions(parts.extensions.values, self.namespace, self.provider_label)?;
 
         if !parts.generation.stop.is_empty() {
             additional_params.insert("stop".to_owned(), json!(parts.generation.stop));
@@ -564,27 +544,27 @@ impl RigRequestMapper for OpenAiRequestMapper {
 fn validate_provider_options(
     options: &Map<String, Value>,
     provider_label: &str,
-    allow_reasoning_effort: bool,
 ) -> Result<(), BridgeError> {
-    for (name, value) in options {
+    if let Some(name) = options.keys().next() {
         if is_standard_field(name) {
             return invalid_configuration(format!(
                 "{provider_label} provider_options cannot override standard field: {name}"
             ));
         }
-        validate_provider_option(name, value, true, provider_label, allow_reasoning_effort)?;
+        return option_error(
+            true,
+            format!("unknown {provider_label} option: {name}; use generation controls"),
+        );
     }
     Ok(())
 }
 
-fn merge_request_extensions(
-    target: &mut Map<String, Value>,
+fn validate_request_extensions(
     extensions: impl IntoIterator<Item = (String, Value)>,
     namespace: &str,
     provider_label: &str,
-    allow_reasoning_effort: bool,
 ) -> Result<(), BridgeError> {
-    for (key, value) in extensions {
+    if let Some((key, _)) = extensions.into_iter().next() {
         let expected_prefix = format!("{namespace}.");
         let Some(name) = key.strip_prefix(&expected_prefix) else {
             return invalid_request(format!(
@@ -596,34 +576,12 @@ fn merge_request_extensions(
                 "{provider_label} extension cannot override standard field: {name}"
             ));
         }
-        validate_provider_option(name, &value, false, provider_label, allow_reasoning_effort)?;
-        target.insert(name.to_owned(), value);
+        return option_error(
+            false,
+            format!("unknown {provider_label} option: {name}; use generation controls"),
+        );
     }
     Ok(())
-}
-
-fn validate_provider_option(
-    name: &str,
-    value: &Value,
-    configuration: bool,
-    provider_label: &str,
-    allow_reasoning_effort: bool,
-) -> Result<(), BridgeError> {
-    match name {
-        "reasoning_effort"
-            if allow_reasoning_effort && value.as_str().is_some_and(|value| !value.is_empty()) =>
-        {
-            Ok(())
-        }
-        "reasoning_effort" if allow_reasoning_effort => option_error(
-            configuration,
-            "OpenAI reasoning_effort must be a non-empty string",
-        ),
-        _ => option_error(
-            configuration,
-            format!("unknown {provider_label} option: {name}"),
-        ),
-    }
 }
 
 fn apply_output_format(
@@ -730,6 +688,7 @@ mod tests {
                 max_output_tokens: Some(512),
                 stop: vec!["END".to_owned()],
                 seed: Some(42),
+                ..Default::default()
             },
             ..CompletionRequest::default()
         };
@@ -785,9 +744,8 @@ mod tests {
     }
 
     #[test]
-    fn request_extension_overrides_provider_specific_default() {
-        let mapper = OpenAiRequestMapper::new(json!({ "reasoning_effort": "low" }))
-            .expect("known provider default must validate");
+    fn legacy_reasoning_options_are_rejected() {
+        assert!(OpenAiRequestMapper::new(json!({"reasoning_effort": "low"})).is_err());
         let request = CompletionRequest {
             messages: vec![Message::user("hello")],
             extensions: ProviderExtensions {
@@ -797,17 +755,10 @@ mod tests {
             },
             ..CompletionRequest::default()
         };
-
-        let mapped = mapper
-            .map_request(request, &GenerationOptions::default())
-            .expect("known request extension must map");
-
-        assert_eq!(
-            mapped
-                .request
-                .additional_params
-                .expect("reasoning_effort must be present")["reasoning_effort"],
-            "high"
+        assert!(
+            OpenAiRequestMapper::default()
+                .map_request(request, &GenerationOptions::default())
+                .is_err()
         );
     }
 

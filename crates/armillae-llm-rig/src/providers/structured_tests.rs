@@ -44,6 +44,7 @@ pub(super) struct Client {
     unary: RecordingHttpClient,
     bytes: Vec<u8>,
     requests: Arc<Mutex<Vec<Value>>>,
+    raw_requests: Arc<Mutex<Vec<Bytes>>>,
     dropped: Arc<AtomicBool>,
     pending: bool,
     transport_error: bool,
@@ -76,6 +77,7 @@ impl HttpClientExt for Client {
     {
         let (parts, body) = req.into_parts();
         let body = body.into();
+        self.raw_requests.lock().unwrap().push(body.clone());
         self.requests
             .lock()
             .unwrap()
@@ -99,6 +101,7 @@ impl HttpClientExt for Client {
         T: Into<Bytes> + WasmCompatSend,
     {
         let body: Bytes = req.into_body().into();
+        self.raw_requests.lock().unwrap().push(body.clone());
         self.requests
             .lock()
             .unwrap()
@@ -165,7 +168,16 @@ fn bridge(provider: &str, client: Client) -> Arc<dyn LlmBridge> {
         provider != "ollama",
         json!({}),
     );
-    let result = match provider {
+    bridge_config(provider, client, config, credential).unwrap()
+}
+
+fn bridge_config(
+    provider: &str,
+    client: Client,
+    config: armillae_llm::BridgeConfig,
+    credential: Option<armillae_llm::SecretString>,
+) -> Result<Arc<dyn LlmBridge>, BridgeError> {
+    match provider {
         "openai" | "openai-compatible" => {
             super::openai::structured_test_bridge(config, credential, client)
         }
@@ -175,8 +187,7 @@ fn bridge(provider: &str, client: Client) -> Arc<dyn LlmBridge> {
         "moonshot" => super::moonshot::structured_test_bridge(config, credential, client),
         "minimax" => super::minimax::structured_test_bridge(config, credential, client),
         _ => unreachable!(),
-    };
-    result.unwrap()
+    }
 }
 
 fn client(provider: &str, text: &str, terminal: bool) -> Client {
@@ -624,5 +635,285 @@ fn all_supported_unary_modes_reject_non_success_finish_reasons() {
                 assert_eq!(client.requests.lock().unwrap().len(), 1);
             }
         }
+    }
+}
+
+#[tokio::test]
+async fn explicit_reasoning_controls_reach_all_seven_provider_wires() {
+    use armillae_core::{GenerationOptions, ReasoningEffort as E, Thinking};
+    for (provider, model, thinking, effort, expected) in [
+        (
+            "openai",
+            "test-model",
+            Some(Thinking::Enabled),
+            Some(E::High),
+            json!({"reasoning_effort":"high"}),
+        ),
+        (
+            "openai-compatible",
+            "test-model",
+            Some(Thinking::Disabled),
+            None,
+            json!({"reasoning_effort":"none"}),
+        ),
+        (
+            "deepseek",
+            "deepseek-v4-pro",
+            Some(Thinking::Enabled),
+            Some(E::High),
+            json!({"thinking":{"type":"enabled"},"reasoning_effort":"high"}),
+        ),
+        (
+            "moonshot",
+            "kimi-k2.6",
+            Some(Thinking::Disabled),
+            None,
+            json!({"thinking":{"type":"disabled"}}),
+        ),
+        (
+            "moonshot",
+            "kimi-k3",
+            None,
+            Some(E::Max),
+            json!({"reasoning_effort":"max"}),
+        ),
+        (
+            "minimax",
+            "MiniMax-M3",
+            Some(Thinking::Disabled),
+            None,
+            json!({"thinking":{"type":"disabled"}}),
+        ),
+        (
+            "minimax",
+            "MiniMax-M3",
+            Some(Thinking::Enabled),
+            None,
+            json!({"thinking":{"type":"adaptive"}}),
+        ),
+        (
+            "anthropic",
+            "claude-sonnet-4-6",
+            Some(Thinking::Adaptive),
+            Some(E::High),
+            json!({"thinking":{"type":"adaptive"},"output_config":{"effort":"high"}}),
+        ),
+        (
+            "anthropic",
+            "claude-sonnet-4-5",
+            Some(Thinking::Budget { tokens: 1024 }),
+            None,
+            json!({"thinking":{"type":"enabled","budget_tokens":1024}}),
+        ),
+        (
+            "ollama",
+            "qwen3",
+            Some(Thinking::Disabled),
+            None,
+            json!({"think":false}),
+        ),
+        (
+            "ollama",
+            "gpt-oss:20b",
+            None,
+            Some(E::Low),
+            json!({"think":"low"}),
+        ),
+    ] {
+        for streaming in [false, true] {
+            let client = client(provider, "hello", true);
+            let (mut config, credential) = super::test_support::resolved_config(
+                provider,
+                Some("http://provider.test"),
+                provider != "ollama",
+                json!({}),
+            );
+            config.model = model.into();
+            config.defaults = GenerationOptions {
+                thinking,
+                reasoning_effort: effort,
+                max_output_tokens: Some(4096),
+                ..Default::default()
+            };
+            let bridge = bridge_config(provider, client.clone(), config, credential).unwrap();
+            let req = CompletionRequest {
+                messages: vec![Message::user("hello")],
+                ..Default::default()
+            };
+            bridge.project(&req).unwrap();
+            assert!(client.requests.lock().unwrap().is_empty());
+            if streaming {
+                let events = bridge.stream(req).await.unwrap().collect::<Vec<_>>().await;
+                assert!(events.iter().all(Result::is_ok), "{provider}: {events:?}");
+            } else {
+                bridge.complete(req).await.unwrap();
+            }
+            let requests = client.requests.lock().unwrap();
+            let body = &requests[0];
+            for (key, value) in expected.as_object().unwrap() {
+                assert_eq!(
+                    &body[key], value,
+                    "{provider} {model} streaming={streaming}"
+                );
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn reasoning_defaults_can_be_overridden_and_cleared_without_mutating_history() {
+    use armillae_core::{GenerationOptions, ReasoningEffort as E, Thinking};
+    let client = client("deepseek", "hello", true);
+    let (mut config, credential) = super::test_support::resolved_config(
+        "deepseek",
+        Some("http://provider.test"),
+        true,
+        json!({}),
+    );
+    config.defaults = GenerationOptions {
+        thinking: Some(Thinking::Enabled),
+        reasoning_effort: Some(E::High),
+        ..Default::default()
+    };
+    let bridge = bridge_config("deepseek", client.clone(), config, credential).unwrap();
+    for streaming in [false, true] {
+        for (thinking, effort) in [
+            (Thinking::Enabled, E::Low),
+            (Thinking::ProviderDefault, E::ProviderDefault),
+        ] {
+            let req = CompletionRequest {
+                messages: vec![Message::user("hello")],
+                generation: GenerationOptions {
+                    thinking: Some(thinking),
+                    reasoning_effort: Some(effort),
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            let original = req.clone();
+            bridge.project(&req).unwrap();
+            assert_eq!(req, original);
+            if streaming {
+                assert!(
+                    bridge
+                        .stream(req)
+                        .await
+                        .unwrap()
+                        .collect::<Vec<_>>()
+                        .await
+                        .iter()
+                        .all(Result::is_ok)
+                );
+            } else {
+                bridge.complete(req).await.unwrap();
+            }
+            let requests = client.requests.lock().unwrap();
+            let body = requests.last().unwrap();
+            if effort == E::Low {
+                assert_eq!(body["reasoning_effort"], "low");
+            } else {
+                assert!(body.get("reasoning_effort").is_none());
+                assert!(body.get("thinking").is_none());
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn anthropic_effort_and_native_schema_share_one_output_config() {
+    use armillae_core::{ReasoningEffort, Thinking};
+    for streaming in [false, true] {
+        let client = client("anthropic", VALID, true);
+        let bridge = bridge("anthropic", client.clone());
+        let mut req = request(StructuredOutputMode::NativeStrict);
+        req.generation.thinking = Some(Thinking::Adaptive);
+        req.generation.reasoning_effort = Some(ReasoningEffort::High);
+        if streaming {
+            assert!(
+                bridge
+                    .stream(req)
+                    .await
+                    .unwrap()
+                    .collect::<Vec<_>>()
+                    .await
+                    .iter()
+                    .all(Result::is_ok)
+            );
+        } else {
+            bridge.complete(req).await.unwrap();
+        }
+        let requests = client.requests.lock().unwrap();
+        let raw = client.raw_requests.lock().unwrap();
+        assert_eq!(
+            String::from_utf8_lossy(&raw[0])
+                .matches("\"output_config\"")
+                .count(),
+            1
+        );
+        assert_eq!(requests[0]["output_config"]["effort"], "high");
+        assert_eq!(requests[0]["output_config"]["format"]["schema"], schema());
+    }
+}
+
+#[tokio::test]
+async fn invalid_reasoning_is_rejected_before_any_http_request() {
+    use armillae_core::{GenerationOptions, ReasoningEffort as E, Thinking};
+    for (provider, model, thinking, effort) in [
+        ("openai", "test-model", Some(Thinking::Enabled), None),
+        (
+            "openai-compatible",
+            "test-model",
+            Some(Thinking::Disabled),
+            Some(E::High),
+        ),
+        ("deepseek", "deepseek-v4-pro", None, Some(E::Medium)),
+        ("moonshot", "kimi-k3", Some(Thinking::Disabled), None),
+        ("moonshot", "kimi-k2.6", None, Some(E::High)),
+        ("minimax", "MiniMax-M2.7", Some(Thinking::Disabled), None),
+        ("minimax", "MiniMax-M3", None, Some(E::High)),
+        (
+            "anthropic",
+            "claude-sonnet-4-6",
+            Some(Thinking::Budget { tokens: 1 }),
+            None,
+        ),
+        (
+            "anthropic",
+            "claude-sonnet-4-5",
+            Some(Thinking::Adaptive),
+            None,
+        ),
+        ("ollama", "gpt-oss:20b", Some(Thinking::Disabled), None),
+        ("ollama", "qwen3", Some(Thinking::Disabled), Some(E::High)),
+    ] {
+        let client = client(provider, "hello", true);
+        let (mut config, credential) = super::test_support::resolved_config(
+            provider,
+            Some("http://provider.test"),
+            provider != "ollama",
+            json!({}),
+        );
+        config.model = model.into();
+        let bridge =
+            bridge_config(provider, client.clone(), config.clone(), credential.clone()).unwrap();
+        let req = CompletionRequest {
+            messages: vec![Message::user("hello")],
+            generation: GenerationOptions {
+                thinking,
+                reasoning_effort: effort,
+                max_output_tokens: Some(4096),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        assert!(bridge.project(&req).is_err(), "{provider}/{model}");
+        assert!(bridge.complete(req.clone()).await.is_err());
+        assert!(bridge.stream(req.clone()).await.is_err());
+        assert!(client.requests.lock().unwrap().is_empty());
+        config.defaults = req.generation;
+        assert!(matches!(
+            bridge_config(provider, client.clone(), config, credential),
+            Err(BridgeError::InvalidConfiguration { .. })
+        ));
     }
 }

@@ -73,6 +73,11 @@ attempt，但不执行 Tool、不维护 Conversation Memory，也不改变 canon
 
 ## 4. 当前工作顺序
 
+2026-09-15：按用户授权将 thinking / reasoning_effort 收敛到 Armillae 公共生成配置，
+不保留 alpha 旧扩展入口兼容层。构造默认值、单次覆盖和恢复 Provider 默认必须显式区分；
+Adapter 负责模式、强度与组合约束的无损投影。该扩展不改变 Bridge/Tool/Router 分层，
+契约与七入口支持矩阵见 LLM Bridge Spec 6.3.1。
+
 结构化结果按 LLM Bridge Spec 7.2.1 的显式模式推进：服务端原生严格 Schema 与 JSON Object
 加客户端 Schema 校验不得互换。范围包含全部七个 Provider 配置入口以及 complete/stream；
 校验属于单次调用结果边界，不引入自动修复、重试或新的运行时层。离线矩阵与授权 Live 门禁

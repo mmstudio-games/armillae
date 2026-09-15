@@ -82,8 +82,9 @@ where
     Ok(Arc::new(bridge))
 }
 
-const fn capabilities() -> BridgeCapabilities {
+fn capabilities() -> BridgeCapabilities {
     BridgeCapabilities {
+        reasoning: crate::reasoning::capabilities("anthropic", ""),
         streaming: true,
         tool_calling: true,
         parallel_tool_calls: true,
@@ -366,6 +367,7 @@ mod tests {
                     max_output_tokens: Some(512),
                     stop: vec!["END".to_owned()],
                     seed: None,
+                    ..Default::default()
                 },
                 ..CompletionRequest::default()
             };
