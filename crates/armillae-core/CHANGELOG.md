@@ -1,5 +1,15 @@
 # Changelog
 
+<!-- semifold:release version=0.1.0-alpha.3 -->
+## v0.1.0-alpha.3
+
+### New Features
+
+- [`6b73b46`](https://github.com/mmstudio-games/armillae/commit/6b73b461419532213ab7e4c38e4a19fc91903ad6): Add explicit Thinking and ReasoningEffort generation controls with Bridge defaults, per-call overrides and ProviderDefault reset. Publish Adapter reasoning capabilities and reject unsupported modes, effort levels and conflicting settings before HTTP calls. All seven Provider entries share the complete, stream and projection path; Anthropic schema and effort share a single output_config.
+
+    Remove the legacy OpenAI provider_options and request-extension reasoning_effort entry points. Rust callers must update exhaustive GenerationOptions and BridgeCapabilities literals. The alpha API does not retain a compatibility layer. Live gates remain opt-in and ignored by default.
+<!-- semifold:release:end -->
+
 <!-- semifold:release version=0.1.0-alpha.2 -->
 ## v0.1.0-alpha.2
 
