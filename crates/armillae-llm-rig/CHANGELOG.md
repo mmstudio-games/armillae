@@ -1,5 +1,19 @@
 # Changelog
 
+<!-- semifold:release version=0.1.0-alpha.3 -->
+## v0.1.0-alpha.3
+
+### New Features
+
+- [`6b73b46`](https://github.com/mmstudio-games/armillae/commit/6b73b461419532213ab7e4c38e4a19fc91903ad6): Add explicit Thinking and ReasoningEffort generation controls with Bridge defaults, per-call overrides and ProviderDefault reset. Publish Adapter reasoning capabilities and reject unsupported modes, effort levels and conflicting settings before HTTP calls. All seven Provider entries share the complete, stream and projection path; Anthropic schema and effort share a single output_config.
+
+    Remove the legacy OpenAI provider_options and request-extension reasoning_effort entry points. Rust callers must update exhaustive GenerationOptions and BridgeCapabilities literals. The alpha API does not retain a compatibility layer. Live gates remain opt-in and ignored by default.
+
+- [`15558e4`](https://github.com/mmstudio-games/armillae/commit/15558e46892c5fbb8797c9c3513f8f70bcfaa06b): Expose `TransportConfig.max_redirects` across all seven Provider entries for complete and stream calls. Zero disables automatic redirects; positive values use reqwest's bounded redirect policy.
+
+    The default changes from reqwest's implicit ten redirects to no redirects, including for existing serialized configurations that omit the new field. Rust struct literals must supply the field or use `..Default::default()`. Positive limits can follow cross-origin redirects and do not reapply construction-time EndpointPolicy to redirect targets. HTTP failures retain status diagnostics. Redirect-limit errors retain the typed transport cause where Rig exposes it; Rig 0.42 SSE paths flatten status-less transport errors, so those streams terminate with StreamInterrupted without a redirect-specific transport kind.
+<!-- semifold:release:end -->
+
 <!-- semifold:release version=0.1.0-alpha.2 -->
 ## v0.1.0-alpha.2
 
